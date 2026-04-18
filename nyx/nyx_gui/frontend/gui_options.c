@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2025 CTCaer
+ * Copyright (c) 2018-2026 CTCaer
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -27,9 +27,6 @@
 #define CLOCK_MIN_YEAR 2025
 #define CLOCK_MAX_YEAR (CLOCK_MIN_YEAR + 10)
 #define CLOCK_YEARLIST "2025\n2026\n2027\n2028\n2029\n2030\n2031\n2032\n2033\n2034\n2035"
-
-extern hekate_config h_cfg;
-extern nyx_config n_cfg;
 
 static lv_obj_t *autoboot_btn;
 static bool autoboot_first_time = true;
@@ -231,7 +228,7 @@ static void _create_autoboot_window()
 
 	// Parse hekate main configuration.
 	LIST_INIT(ini_sections);
-	if (ini_parse(&ini_sections, "bootloader/hekate_ipl.ini", false))
+	if (!ini_parse(&ini_sections, "bootloader/hekate_ipl.ini", false))
 	{
 		LIST_FOREACH_ENTRY(ini_sec_t, ini_sec, &ini_sections, link)
 		{
@@ -275,7 +272,7 @@ static void _create_autoboot_window()
 
 	// Parse all .ini files in ini folder.
 	LIST_INIT(ini_list_sections);
-	if (ini_parse(&ini_list_sections, "bootloader/ini", true))
+	if (!ini_parse(&ini_list_sections, "bootloader/ini", true))
 	{
 		LIST_FOREACH_ENTRY(ini_sec_t, ini_sec, &ini_list_sections, link)
 		{
@@ -376,31 +373,40 @@ static lv_res_t _save_nyx_options_action(lv_obj_t *btn)
 	return LV_RES_OK;
 }
 
-void create_flat_button(lv_obj_t *parent, lv_obj_t *btn, lv_color_t color, lv_action_t action)
+void create_flat_button(lv_obj_t *btn, int color_idx, lv_action_t action)
 {
+	lv_color_t color = color_idx ? lv_color_hsv_to_rgb(color_idx, 100, 100) : lv_color_hsv_to_rgb(53, 8, 90);
 	lv_style_t *btn_onoff_rel_hos_style = malloc(sizeof(lv_style_t));
-	lv_style_t *btn_onoff_pr_hos_style = malloc(sizeof(lv_style_t));
+	lv_style_t *btn_onoff_pr_hos_style  = malloc(sizeof(lv_style_t));
 	lv_style_copy(btn_onoff_rel_hos_style, lv_theme_get_current()->btn.rel);
-	btn_onoff_rel_hos_style->body.main_color = color;
-	btn_onoff_rel_hos_style->body.grad_color = btn_onoff_rel_hos_style->body.main_color;
+	btn_onoff_rel_hos_style->body.main_color  = color;
+	btn_onoff_rel_hos_style->body.grad_color  = btn_onoff_rel_hos_style->body.main_color;
 	btn_onoff_rel_hos_style->body.padding.hor = 0;
-	btn_onoff_rel_hos_style->body.radius = 0;
+	btn_onoff_rel_hos_style->body.radius      = 0;
+
+	if (color_idx == 167)
+	{
+		btn_onoff_rel_hos_style->body.border.color = LV_COLOR_HEX(0x000000);
+		btn_onoff_rel_hos_style->body.border.opa = LV_OPA_20;
+		btn_onoff_rel_hos_style->body.border.width = 3;
+	}
 
 	lv_style_copy(btn_onoff_pr_hos_style, lv_theme_get_current()->btn.pr);
-	btn_onoff_pr_hos_style->body.main_color = color;
-	btn_onoff_pr_hos_style->body.grad_color = btn_onoff_pr_hos_style->body.main_color;
-	btn_onoff_pr_hos_style->body.padding.hor = 0;
-	btn_onoff_pr_hos_style->body.border.color = LV_COLOR_GRAY;
+	btn_onoff_pr_hos_style->body.main_color   = color;
+	btn_onoff_pr_hos_style->body.grad_color   = btn_onoff_pr_hos_style->body.main_color;
+	btn_onoff_pr_hos_style->body.padding.hor  = 0;
+	btn_onoff_pr_hos_style->body.border.color = LV_COLOR_HEX(0xFFFFFF);
+	btn_onoff_pr_hos_style->body.border.opa   = LV_OPA_50;
 	btn_onoff_pr_hos_style->body.border.width = 4;
-	btn_onoff_pr_hos_style->body.radius = 0;
+	btn_onoff_pr_hos_style->body.radius       = 0;
 
-	lv_btn_set_style(btn, LV_BTN_STYLE_REL, btn_onoff_rel_hos_style);
-	lv_btn_set_style(btn, LV_BTN_STYLE_PR, btn_onoff_pr_hos_style);
+	lv_btn_set_style(btn, LV_BTN_STYLE_REL,     btn_onoff_rel_hos_style);
+	lv_btn_set_style(btn, LV_BTN_STYLE_PR,      btn_onoff_pr_hos_style);
 	lv_btn_set_style(btn, LV_BTN_STYLE_TGL_REL, btn_onoff_rel_hos_style);
-	lv_btn_set_style(btn, LV_BTN_STYLE_TGL_PR, btn_onoff_pr_hos_style);
+	lv_btn_set_style(btn, LV_BTN_STYLE_TGL_PR,  btn_onoff_pr_hos_style);
 
-	lv_btn_set_fit(btn, false, true);
-	lv_obj_set_width(btn, lv_obj_get_height(btn));
+	lv_btn_set_fit(btn, false, false);
+	lv_obj_set_size(btn, LV_DPI * 7 / 11, LV_DPI * 7 / 11);
 	lv_btn_set_toggle(btn, true);
 
 	if (action)
@@ -411,6 +417,10 @@ typedef struct _color_test_ctxt
 {
 	u32 bg;
 	u16 hue;
+	u8 r;
+	u8 g;
+	u8 b;
+
 	lv_obj_t *window;
 	lv_obj_t *header1;
 	lv_obj_t *header2;
@@ -420,11 +430,25 @@ typedef struct _color_test_ctxt
 	lv_obj_t *button;
 	lv_obj_t *hue_slider;
 	lv_obj_t *hue_label;
+
+	lv_obj_t *r_slider;
+	lv_obj_t *r_label;
+	lv_obj_t *g_slider;
+	lv_obj_t *g_label;
+	lv_obj_t *b_slider;
+	lv_obj_t *b_label;
+
+	lv_style_t box_style;
+	lv_obj_t *box;
+
+	lv_obj_t *btn_reset;
+	lv_obj_t *btn_apply;
+	lv_obj_t *btn_black;
 } color_test_ctxt;
 
 color_test_ctxt color_test;
 
-static lv_res_t _save_theme_color_action(lv_obj_t *btn)
+static lv_res_t _action_win_nyx_colors_save(lv_obj_t *btn)
 {
 	n_cfg.theme_bg    = color_test.bg;
 	n_cfg.theme_color = color_test.hue;
@@ -437,12 +461,23 @@ static lv_res_t _save_theme_color_action(lv_obj_t *btn)
 	return LV_RES_OK;
 }
 
-static void _show_new_nyx_color(u32 bg, u16 hue, bool update_bg)
+static void _show_new_nyx_color(bool update_bg)
 {
-	lv_color_t bgc        = LV_COLOR_HEX(bg);
-	lv_color_t bgc_light  = LV_COLOR_HEX(bg ? (bg + 0x101010) : 0x2D2D2D);
-	lv_color_t bg_border  = LV_COLOR_HEX(bg ? (bg + 0x202020) : 0x3D3D3D);
-	lv_color_t color      = lv_color_hsv_to_rgb(hue, 100, 100);
+	u32 bg = color_test.bg;
+	u16 hue = color_test.hue;
+
+	lv_color_t bgc       = LV_COLOR_HEX(bg);                              // COLOR_HOS_BG.
+	lv_color_t bgc_light = LV_COLOR_HEX(bg ? (bg + 0x101010) : 0x2D2D2D); // COLOR_HOS_BG_LIGHT.
+	lv_color_t bgc_press = LV_COLOR_HEX(bg ? (bg + 0x232323) : 0x404040); // 0x505050.
+	lv_color_t bg_border = LV_COLOR_HEX(bg ? (bg + 0x202020) : 0x3D3D3D); // COLOR_HOS_BG_LIGHTER.
+	lv_color_t color     = hue ? lv_color_hsv_to_rgb(hue, 100, 100) : lv_color_hsv_to_rgb(53, 8, 90);
+
+	static lv_style_t btn_tgl_pr_test;
+	lv_style_copy(&btn_tgl_pr_test, lv_btn_get_style(color_test.button, LV_BTN_STATE_TGL_PR));
+	btn_tgl_pr_test.body.main_color = bgc_press;
+	btn_tgl_pr_test.body.grad_color = btn_tgl_pr_test.body.main_color;
+	btn_tgl_pr_test.body.border.color = color;
+	btn_tgl_pr_test.text.color = color;
 
 	if (update_bg)
 	{
@@ -469,6 +504,27 @@ static void _show_new_nyx_color(u32 bg, u16 hue, bool update_bg)
 		hdr2_bg_test.body.main_color = bgc;
 		hdr2_bg_test.body.grad_color = hdr2_bg_test.body.main_color;
 		lv_cont_set_style(color_test.header2, &hdr2_bg_test);
+
+		static lv_style_t btn_tgl_rel_test;
+		lv_style_copy(&btn_tgl_rel_test, lv_btn_get_style(color_test.btn_reset, LV_BTN_STATE_REL));
+		btn_tgl_rel_test.body.main_color = bgc_light;
+		btn_tgl_rel_test.body.grad_color = btn_tgl_rel_test.body.main_color;
+		lv_btn_set_style(color_test.btn_reset, LV_BTN_STATE_REL, &btn_tgl_rel_test);
+		lv_btn_set_style(color_test.btn_reset, LV_BTN_STATE_PR, &btn_tgl_pr_test);
+		lv_btn_set_style(color_test.btn_apply, LV_BTN_STATE_REL, &btn_tgl_rel_test);
+		lv_btn_set_style(color_test.btn_apply, LV_BTN_STATE_PR, &btn_tgl_pr_test);
+		lv_btn_set_style(color_test.btn_black, LV_BTN_STATE_REL, &btn_tgl_rel_test);
+		lv_btn_set_style(color_test.btn_black, LV_BTN_STATE_PR, &btn_tgl_pr_test);
+
+		static lv_style_t slider_bg;
+		lv_style_copy(&slider_bg, lv_slider_get_style(color_test.slider, LV_SLIDER_STYLE_BG));
+		slider_bg.body.main_color = bg_border;
+		slider_bg.body.grad_color = slider_bg.body.main_color;
+		lv_slider_set_style(color_test.hue_slider, LV_SLIDER_STYLE_BG, &slider_bg);
+		lv_slider_set_style(color_test.slider,     LV_SLIDER_STYLE_BG, &slider_bg);
+		lv_slider_set_style(color_test.r_slider,   LV_SLIDER_STYLE_BG, &slider_bg);
+		lv_slider_set_style(color_test.g_slider,   LV_SLIDER_STYLE_BG, &slider_bg);
+		lv_slider_set_style(color_test.b_slider,   LV_SLIDER_STYLE_BG, &slider_bg);
 	}
 	else
 	{
@@ -477,29 +533,29 @@ static void _show_new_nyx_color(u32 bg, u16 hue, bool update_bg)
 		txt_test.text.color = color;
 		lv_obj_set_style(color_test.label, &txt_test);
 		lv_obj_set_style(color_test.icons, &txt_test);
+
+		static lv_style_t slider_knb;
+		lv_style_copy(&slider_knb, lv_slider_get_style(color_test.slider, LV_SLIDER_STYLE_KNOB));
+		slider_knb.body.main_color = color;
+		slider_knb.body.grad_color = slider_knb.body.main_color;
+		lv_slider_set_style(color_test.hue_slider, LV_SLIDER_STYLE_KNOB, &slider_knb);
+		lv_slider_set_style(color_test.slider,     LV_SLIDER_STYLE_KNOB, &slider_knb);
+		lv_slider_set_style(color_test.r_slider,   LV_SLIDER_STYLE_KNOB, &slider_knb);
+		lv_slider_set_style(color_test.g_slider,   LV_SLIDER_STYLE_KNOB, &slider_knb);
+		lv_slider_set_style(color_test.b_slider,   LV_SLIDER_STYLE_KNOB, &slider_knb);
+
+		static lv_style_t slider_ind;
+		lv_style_copy(&slider_ind, lv_slider_get_style(color_test.slider, LV_SLIDER_STYLE_INDIC));
+		slider_ind.body.main_color = hue ? lv_color_hsv_to_rgb(hue, 100, 72) : lv_color_hsv_to_rgb(53, 8, 65);
+		slider_ind.body.grad_color = slider_ind.body.main_color;
+		lv_slider_set_style(color_test.hue_slider, LV_SLIDER_STYLE_INDIC, &slider_ind);
+		lv_slider_set_style(color_test.slider,     LV_SLIDER_STYLE_INDIC, &slider_ind);
+		lv_slider_set_style(color_test.r_slider,   LV_SLIDER_STYLE_INDIC, &slider_ind);
+		lv_slider_set_style(color_test.g_slider,   LV_SLIDER_STYLE_INDIC, &slider_ind);
+		lv_slider_set_style(color_test.b_slider,   LV_SLIDER_STYLE_INDIC, &slider_ind);
 	}
 
-	static lv_style_t btn_tgl_pr_test;
-	lv_style_copy(&btn_tgl_pr_test, lv_btn_get_style(color_test.button, LV_BTN_STATE_TGL_PR));
-	btn_tgl_pr_test.body.main_color = bgc_light;
-	btn_tgl_pr_test.body.grad_color = btn_tgl_pr_test.body.main_color;
-	btn_tgl_pr_test.body.border.color = color;
-	btn_tgl_pr_test.text.color = color;
 	lv_btn_set_style(color_test.button, LV_BTN_STATE_TGL_PR, &btn_tgl_pr_test);
-
-	static lv_style_t slider_bg, slider_test, slider_ind;
-	lv_style_copy(&slider_bg, lv_slider_get_style(color_test.slider, LV_SLIDER_STYLE_BG));
-	lv_style_copy(&slider_test, lv_slider_get_style(color_test.slider, LV_SLIDER_STYLE_KNOB));
-	lv_style_copy(&slider_ind, lv_slider_get_style(color_test.slider, LV_SLIDER_STYLE_INDIC));
-	slider_bg.body.main_color = bg_border;
-	slider_bg.body.grad_color = slider_bg.body.main_color;
-	slider_test.body.main_color = color;
-	slider_test.body.grad_color = slider_test.body.main_color;
-	slider_ind.body.main_color = lv_color_hsv_to_rgb(hue, 100, 72);
-	slider_ind.body.grad_color = slider_ind.body.main_color;
-	lv_slider_set_style(color_test.slider, LV_SLIDER_STYLE_BG, &slider_bg);
-	lv_slider_set_style(color_test.slider, LV_SLIDER_STYLE_KNOB, &slider_test);
-	lv_slider_set_style(color_test.slider, LV_SLIDER_STYLE_INDIC, &slider_ind);
 }
 
 static lv_res_t _slider_hue_action(lv_obj_t *slider)
@@ -507,7 +563,9 @@ static lv_res_t _slider_hue_action(lv_obj_t *slider)
 	if (color_test.hue != lv_slider_get_value(slider))
 	{
 		color_test.hue = lv_slider_get_value(slider);
-		_show_new_nyx_color(color_test.bg, color_test.hue, false);
+
+		_show_new_nyx_color(false);
+
 		char hue[8];
 		s_printf(hue, "%03d", color_test.hue);
 		lv_label_set_text(color_test.hue_label, hue);
@@ -516,14 +574,97 @@ static lv_res_t _slider_hue_action(lv_obj_t *slider)
 	return LV_RES_OK;
 }
 
-static lv_res_t _preset_bg_action(lv_obj_t *btn)
+static lv_res_t _slider_r_action(lv_obj_t *slider)
 {
-	//! TODO: Support a range?
-	if (color_test.bg)
-		color_test.bg = 0;
-	else
-		color_test.bg = COLOR_HOS_BG;
-	_show_new_nyx_color(color_test.bg, color_test.hue, true);
+	if (color_test.r != lv_slider_get_value(slider))
+	{
+		color_test.r = lv_slider_get_value(slider);
+		color_test.box_style.body.main_color = LV_COLOR_HEX((color_test.r << 16) | (color_test.g << 8) | color_test.b);
+		color_test.box_style.body.grad_color = color_test.box_style.body.main_color;
+		lv_obj_set_style(color_test.box, &color_test.box_style);
+
+		char shade[8];
+		s_printf(shade, "%03d", color_test.r);
+		lv_label_set_text(color_test.r_label, shade);
+	}
+
+	return LV_RES_OK;
+}
+
+static lv_res_t _slider_g_action(lv_obj_t *slider)
+{
+	if (color_test.g != lv_slider_get_value(slider))
+	{
+		color_test.g = lv_slider_get_value(slider);
+		color_test.box_style.body.main_color = LV_COLOR_HEX((color_test.r << 16) | (color_test.g << 8) | color_test.b);
+		color_test.box_style.body.grad_color = color_test.box_style.body.main_color;
+		lv_obj_set_style(color_test.box, &color_test.box_style);
+
+		char shade[8];
+		s_printf(shade, "%03d", color_test.g);
+		lv_label_set_text(color_test.g_label, shade);
+	}
+
+	return LV_RES_OK;
+}
+
+static lv_res_t _slider_b_action(lv_obj_t *slider)
+{
+	if (color_test.b != lv_slider_get_value(slider))
+	{
+		color_test.b = lv_slider_get_value(slider);
+		color_test.box_style.body.main_color = LV_COLOR_HEX((color_test.r << 16) | (color_test.g << 8) | color_test.b);
+		color_test.box_style.body.grad_color = color_test.box_style.body.main_color;
+		lv_obj_set_style(color_test.box, &color_test.box_style);
+
+		char shade[8];
+		s_printf(shade, "%03d", color_test.b);
+		lv_label_set_text(color_test.b_label, shade);
+	}
+
+	return LV_RES_OK;
+}
+
+static lv_res_t _preset_bg_apply(lv_obj_t *btn)
+{
+	color_test.bg = (color_test.r << 16) | (color_test.g << 8) | color_test.b;
+
+	_show_new_nyx_color(true);
+
+	return LV_RES_OK;
+}
+
+static lv_res_t _preset_bg_black(lv_obj_t *btn)
+{
+	color_test.bg = 0;
+
+	_show_new_nyx_color(true);
+
+	return LV_RES_OK;
+}
+
+static lv_res_t _preset_bg_reset(lv_obj_t *btn)
+{
+	color_test.r = 0x2D;
+	color_test.g = 0x2D;
+	color_test.b = 0x2D;
+	color_test.bg = 0x2D2D2D;
+
+	color_test.box_style.body.main_color = LV_COLOR_HEX(color_test.bg);
+	color_test.box_style.body.grad_color = color_test.box_style.body.main_color;
+	lv_obj_set_style(color_test.box, &color_test.box_style);
+
+	lv_bar_set_value(color_test.r_slider, color_test.r);
+	lv_bar_set_value(color_test.g_slider, color_test.g);
+	lv_bar_set_value(color_test.b_slider, color_test.b);
+
+	char shade[8];
+	s_printf(shade, "%03d", color_test.r);
+	lv_label_set_text(color_test.r_label, shade);
+	lv_label_set_text(color_test.g_label, shade);
+	lv_label_set_text(color_test.b_label, shade);
+
+	_show_new_nyx_color(true);
 
 	return LV_RES_OK;
 }
@@ -535,95 +676,194 @@ static lv_res_t _preset_hue_action(lv_obj_t *btn)
 	if (color_test.hue != ext->idx)
 	{
 		color_test.hue = ext->idx;
-		_show_new_nyx_color(color_test.bg, color_test.hue, false);
+
 		char hue[8];
 		s_printf(hue, "%03d", color_test.hue);
 		lv_label_set_text(color_test.hue_label, hue);
 		lv_bar_set_value(color_test.hue_slider, color_test.hue);
+
+		_show_new_nyx_color(false);
 	}
 
 	return LV_RES_OK;
 }
 
-static const u16 theme_colors[17] = {
-	4, 13, 23, 33, 43, 54, 66, 89, 124, 167, 187, 200, 208, 231, 261, 291, 341
+static const u16 theme_colors[18] = {
+	0, 4, 13, 23, 33, 43, 54, 66, 89, 124, 167, 187, 200, 208, 231, 261, 291, 341
 };
+
+lv_res_t _action_win_nyx_colors_close(lv_obj_t * btn)
+{
+	lv_obj_set_opa_scale(status_bar.mid, LV_OPA_COVER);
+	lv_obj_set_click(status_bar.mid, true);
+
+	return nyx_win_close_action(btn);
+}
 
 static lv_res_t _create_window_nyx_colors(lv_obj_t *btn)
 {
-	lv_obj_t *win = nyx_create_standard_window(SYMBOL_COPY" Nyx Color Theme");
-	lv_win_add_btn(win, NULL, SYMBOL_HINT" Toggle Background", _preset_bg_action);
-	lv_win_add_btn(win, NULL, SYMBOL_SAVE" Save & Reload", _save_theme_color_action);
+	lv_obj_t *win = nyx_create_standard_window(SYMBOL_COPY" Nyx Color Theme", _action_win_nyx_colors_close);
+	lv_win_add_btn(win, NULL, SYMBOL_SAVE" Save & Reload", _action_win_nyx_colors_save);
 	color_test.window = win;
 
 	// Set current theme colors.
 	color_test.bg  = n_cfg.theme_bg;
 	color_test.hue = n_cfg.theme_color;
+	u32 bg = n_cfg.theme_bg ? n_cfg.theme_bg : 0x2D2D2D;
+	color_test.r = (bg >> 16) & 0xFF;
+	color_test.g = (bg >>  8) & 0xFF;
+	color_test.b = (bg >>  0) & 0xFF;
 
-	lv_obj_t *sep = lv_label_create(win, NULL);
-	lv_label_set_static_text(sep, "");
-	lv_obj_align(sep, NULL, LV_ALIGN_IN_TOP_MID, 0, 0);
+	lv_style_copy(&color_test.box_style, &lv_style_plain_color);
+	color_test.box_style.body.main_color = LV_COLOR_HEX(color_test.bg);
+	color_test.box_style.body.grad_color = color_test.box_style.body.main_color;
+	color_test.box_style.body.border.color = LV_COLOR_HEX(0xFFFFFF);
+	color_test.box_style.body.border.opa   = LV_OPA_20;
+	color_test.box_style.body.border.width = 2;
 
 	// Create container to keep content inside.
 	lv_obj_t *h1 = lv_cont_create(win, NULL);
-	lv_obj_set_size(h1, LV_HOR_RES - (LV_DPI * 8 / 10), LV_VER_RES / 7);
+	lv_obj_set_size(h1, LV_DPI * 299 / 25, LV_DPI * 27 / 26);
 	color_test.header1 = h1;
+
+	lv_obj_t *acc_label = lv_label_create(h1, NULL);
+	lv_label_set_static_text(acc_label, "Accent color:");
 
 	// Create color preset buttons.
 	lv_obj_t *color_btn = lv_btn_create(h1, NULL);
 	lv_btn_ext_t *ext = lv_obj_get_ext_attr(color_btn);
 	ext->idx = theme_colors[0];
-	create_flat_button(h1, color_btn, lv_color_hsv_to_rgb(theme_colors[0], 100, 100), _preset_hue_action);
+	create_flat_button(color_btn, ext->idx, _preset_hue_action);
+	lv_obj_align(color_btn, acc_label, LV_ALIGN_OUT_BOTTOM_LEFT, 0, LV_DPI / 10);
 	lv_obj_t *color_btn2;
 
-	for (u32 i = 1; i < 17; i++)
+	for (u32 i = 1; i < ARRAY_SIZE(theme_colors); i++)
 	{
 		color_btn2 = lv_btn_create(h1, NULL);
 		ext = lv_obj_get_ext_attr(color_btn2);
 		ext->idx = theme_colors[i];
-		create_flat_button(h1, color_btn2, lv_color_hsv_to_rgb(theme_colors[i], 100, 100), _preset_hue_action);
+		create_flat_button(color_btn2, ext->idx, _preset_hue_action);
 		lv_obj_align(color_btn2, color_btn, LV_ALIGN_OUT_RIGHT_MID, 0, 0);
 		color_btn = color_btn2;
 	}
 
-	lv_obj_align(h1, sep, LV_ALIGN_OUT_BOTTOM_MID, 0, LV_DPI / 4);
+	lv_obj_align(h1, NULL, LV_ALIGN_IN_TOP_MID, 0, LV_DPI / 5);
 
 	// Create hue slider.
-	lv_obj_t * slider = lv_slider_create(win, NULL);
-	lv_obj_set_width(slider, 1070);
-	lv_obj_set_height(slider, LV_DPI * 4 / 10);
-	lv_bar_set_range(slider, 0, 359);
-	lv_bar_set_value(slider, color_test.hue);
-	lv_slider_set_action(slider, _slider_hue_action);
-	lv_obj_align(slider, h1, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 0);
-	color_test.hue_slider = slider;
+	lv_obj_t *h_slider = lv_slider_create(win, NULL);
+	lv_obj_set_width(h_slider, LV_DPI * 213 / 20);
+	lv_obj_set_height(h_slider, LV_DPI * 4 / 10);
+	lv_bar_set_range(h_slider, 0, 359);
+	lv_bar_set_value(h_slider, color_test.hue);
+	lv_slider_set_action(h_slider, _slider_hue_action);
+	lv_obj_align(h_slider, h1, LV_ALIGN_OUT_BOTTOM_LEFT, 0, LV_DPI / 5);
+	color_test.hue_slider = h_slider;
 
 	// Create hue label.
 	lv_obj_t *hue_text_label = lv_label_create(win, NULL);
-	lv_obj_align(hue_text_label, slider, LV_ALIGN_OUT_RIGHT_MID, LV_DPI * 24 / 100, 0);
-	char hue[8];
-	s_printf(hue, "%03d", color_test.hue);
-	lv_label_set_text(hue_text_label, hue);
+	lv_obj_align(hue_text_label, h_slider, LV_ALIGN_OUT_RIGHT_MID, LV_DPI * 24 / 100, 0);
+	char txt[8];
+	s_printf(txt, "%03d", color_test.hue);
+	lv_label_set_text(hue_text_label, txt);
 	color_test.hue_label = hue_text_label;
+
+	lv_obj_t *bg_label = lv_label_create(win, NULL);
+	lv_label_set_static_text(bg_label, "Theme color:");
+	lv_obj_align(bg_label, h_slider, LV_ALIGN_OUT_BOTTOM_LEFT, 0, LV_DPI * 6 / 25);
+
+	// Create red slider.
+	lv_obj_t *r_slider = lv_slider_create(win, NULL);
+	lv_obj_set_width(r_slider, LV_DPI * 85 / 16);
+	lv_obj_set_height(r_slider, LV_DPI * 4 / 10);
+	lv_bar_set_range(r_slider, 11, 100);
+	lv_bar_set_value(r_slider, color_test.r);
+	lv_slider_set_action(r_slider, _slider_r_action);
+	lv_obj_align(r_slider, bg_label, LV_ALIGN_OUT_BOTTOM_LEFT, 0, LV_DPI / 21);
+	color_test.r_slider = r_slider;
+
+	// Create red label.
+	lv_obj_t *r_text_label = lv_label_create(win, NULL);
+	lv_obj_align(r_text_label, r_slider, LV_ALIGN_OUT_RIGHT_MID, LV_DPI * 24 / 100, 0);
+	s_printf(txt, "%03d", color_test.r);
+	lv_label_set_text(r_text_label, txt);
+	color_test.r_label = r_text_label;
+
+	// Create green slider.
+	lv_obj_t *g_slider = lv_slider_create(win, r_slider);
+	lv_bar_set_value(g_slider, color_test.g);
+	lv_slider_set_action(g_slider, _slider_g_action);
+	lv_obj_align(g_slider, r_slider, LV_ALIGN_OUT_BOTTOM_LEFT, 0, LV_DPI / 7);
+	color_test.g_slider = g_slider;
+
+	// Create green label.
+	lv_obj_t *g_text_label = lv_label_create(win, NULL);
+	lv_obj_align(g_text_label, g_slider, LV_ALIGN_OUT_RIGHT_MID, LV_DPI * 24 / 100, 0);
+	s_printf(txt, "%03d", color_test.g);
+	lv_label_set_text(g_text_label, txt);
+	color_test.g_label = g_text_label;
+
+	// Create blue slider.
+	lv_obj_t *b_slider = lv_slider_create(win, r_slider);
+	lv_bar_set_value(b_slider, color_test.b);
+	lv_slider_set_action(b_slider, _slider_b_action);
+	lv_obj_align(b_slider, g_slider, LV_ALIGN_OUT_BOTTOM_LEFT, 0, LV_DPI / 7);
+	color_test.b_slider = b_slider;
+
+	// Create blue label.
+	lv_obj_t *b_text_label = lv_label_create(win, NULL);
+	lv_obj_align(b_text_label, b_slider, LV_ALIGN_OUT_RIGHT_MID, LV_DPI * 24 / 100, 0);
+	s_printf(txt, "%03d", color_test.b);
+	lv_label_set_text(b_text_label, txt);
+	color_test.b_label = b_text_label;
+
+	// Create theme color box.
+	lv_obj_t * bg_box = lv_obj_create(win, NULL);
+	lv_obj_set_size(bg_box, LV_DPI * 10 / 7, LV_DPI * 18 / 13);
+	lv_obj_align(bg_box, r_text_label, LV_ALIGN_OUT_RIGHT_TOP, LV_DPI / 4, 0);
+	lv_obj_set_style(bg_box, &color_test.box_style);
+	color_test.box = bg_box;
+
+	// Create theme color buttons.
+	lv_obj_t *btn_reset = lv_btn_create(win, NULL);
+	lv_obj_t *label_btn = lv_label_create(btn_reset, NULL);
+	lv_label_set_static_text(label_btn, SYMBOL_REFRESH" Grey");
+	lv_btn_set_fit(btn_reset, false, true);
+	lv_obj_set_width(btn_reset, LV_DPI * 5 / 3);
+	lv_btn_set_action(btn_reset, LV_BTN_ACTION_CLICK, _preset_bg_reset);
+	lv_obj_align(btn_reset, bg_box, LV_ALIGN_OUT_RIGHT_TOP, LV_DPI / 5, 0);
+	color_test.btn_reset = btn_reset;
+
+	lv_obj_t *btn_black = lv_btn_create(win, btn_reset);
+	label_btn = lv_label_create(btn_black, NULL);
+	lv_label_set_static_text(label_btn, SYMBOL_BRIGHTNESS" Black");
+	lv_btn_set_action(btn_black, LV_BTN_ACTION_CLICK, _preset_bg_black);
+	lv_obj_align(btn_black, btn_reset, LV_ALIGN_OUT_RIGHT_TOP, LV_DPI / 5, 0);
+	color_test.btn_black = btn_black;
+
+	lv_obj_t *btn_apply = lv_btn_create(win, btn_reset);
+	label_btn = lv_label_create(btn_apply, NULL);
+	lv_label_set_static_text(label_btn, SYMBOL_LIST" Custom Color");
+	lv_obj_set_width(btn_apply, LV_DPI * 10 / 3 + LV_DPI / 5);
+	lv_btn_set_action(btn_apply, LV_BTN_ACTION_CLICK, _preset_bg_apply);
+	lv_obj_align(btn_apply, btn_reset, LV_ALIGN_OUT_BOTTOM_LEFT, 0, LV_DPI / 7);
+	color_test.btn_apply = btn_apply;
 
 	// Create sample text.
 	lv_obj_t *h2 = lv_cont_create(win, NULL);
-	lv_obj_set_size(h2, LV_HOR_RES - (LV_DPI * 8 / 10), LV_VER_RES / 3);
-	lv_obj_align(h2, slider, LV_ALIGN_OUT_BOTTOM_LEFT, 0, LV_DPI);
+	lv_obj_set_size(h2, LV_DPI * 12, LV_DPI * 18 / 10);
+	lv_obj_align(h2, b_slider, LV_ALIGN_OUT_BOTTOM_LEFT, 0, LV_DPI * 6 / 25);
 	color_test.header2 = h2;
 
 	lv_obj_t *lbl_sample = lv_label_create(h2, NULL);
-	lv_label_set_static_text(lbl_sample, "Sample:");
+	lv_label_set_static_text(lbl_sample, "Accent sample:");
 
 	lv_obj_t *lbl_test = lv_label_create(h2, NULL);
 	lv_label_set_long_mode(lbl_test, LV_LABEL_LONG_BREAK);
 	lv_label_set_static_text(lbl_test,
 		"Lorem ipsum dolor sit amet, consectetur adipisicing elit, "
-		"sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. "
-		"Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris "
-		"nisi ut aliquip ex ea commodo consequat.");
-	lv_obj_set_width(lbl_test, lv_obj_get_width(h2) - LV_DPI * 6 / 10);
-	lv_obj_align(lbl_test, lbl_sample, LV_ALIGN_OUT_BOTTOM_LEFT, 0, LV_DPI / 5);
+		"sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.");
+	lv_obj_set_width(lbl_test, LV_DPI * 261 / 23);
+	lv_obj_align(lbl_test, lbl_sample, LV_ALIGN_OUT_BOTTOM_LEFT, 0, LV_DPI / 34);
 	color_test.label = lbl_test;
 
 	// Create sample icons.
@@ -631,12 +871,12 @@ static lv_res_t _create_window_nyx_colors(lv_obj_t *btn)
 	lv_label_set_static_text(lbl_icons,
 		SYMBOL_BRIGHTNESS SYMBOL_CHARGE SYMBOL_FILE SYMBOL_DRIVE SYMBOL_FILE_CODE
 		SYMBOL_EDIT SYMBOL_HINT SYMBOL_DRIVE SYMBOL_KEYBOARD SYMBOL_POWER);
-	lv_obj_align(lbl_icons, lbl_test, LV_ALIGN_OUT_BOTTOM_LEFT, 0, LV_DPI * 2 / 5);
+	lv_obj_align(lbl_icons, lbl_test, LV_ALIGN_OUT_BOTTOM_LEFT, 0, LV_DPI / 5);
 	color_test.icons = lbl_icons;
 
 	// Create sample slider.
 	lv_obj_t *slider_test = lv_slider_create(h2, NULL);
-	lv_obj_align(slider_test, lbl_test, LV_ALIGN_OUT_BOTTOM_MID, 0, LV_DPI * 2 / 5);
+	lv_obj_align(slider_test, lbl_test, LV_ALIGN_OUT_BOTTOM_MID, 0, LV_DPI / 5);
 	lv_obj_set_click(slider_test, false);
 	lv_bar_set_value(slider_test, 60);
 	color_test.slider = slider_test;
@@ -644,12 +884,17 @@ static lv_res_t _create_window_nyx_colors(lv_obj_t *btn)
 	// Create sample button.
 	lv_obj_t *btn_test = lv_btn_create(h2, NULL);
 	lv_btn_set_state(btn_test, LV_BTN_STATE_TGL_PR);
-	lv_obj_align(btn_test, lbl_test, LV_ALIGN_OUT_BOTTOM_RIGHT, 0, LV_DPI / 5);
 	lv_label_create(btn_test, NULL);
+	lv_btn_set_fit(btn_test, false, true);
+	lv_obj_set_width(btn_test, LV_DPI * 5 / 3);
+	lv_obj_align(btn_test, lbl_test, LV_ALIGN_OUT_BOTTOM_RIGHT, 0, LV_DPI / 20);
 	lv_obj_set_click(btn_test, false);
 	color_test.button = btn_test;
 
-	_show_new_nyx_color(color_test.bg, color_test.hue, false);
+	_show_new_nyx_color(false);
+
+	lv_obj_set_opa_scale(status_bar.mid, LV_OPA_0);
+	lv_obj_set_click(status_bar.mid, false);
 
 	return LV_RES_OK;
 }
@@ -675,7 +920,7 @@ static lv_res_t _action_clock_edit(lv_obj_t *btns, const char * txt)
 		max77620_rtc_get_time(&time);
 		u32 epoch = max77620_rtc_date_to_epoch(&time);
 
-		u32 year  = lv_roller_get_selected(clock_ctxt.year);
+		u32 year  = lv_roller_get_selected(clock_ctxt.year) + CLOCK_MIN_YEAR;
 		u32 month = lv_roller_get_selected(clock_ctxt.month) + 1;
 		u32 day   = lv_roller_get_selected(clock_ctxt.day) + 1;
 		u32 hour  = lv_roller_get_selected(clock_ctxt.hour);
@@ -698,7 +943,7 @@ static lv_res_t _action_clock_edit(lv_obj_t *btns, const char * txt)
 			break;
 		}
 
-		time.year  = year + CLOCK_MIN_YEAR;
+		time.year  = year;
 		time.month = month;
 		time.day   = day;
 		time.hour  = hour;
@@ -707,18 +952,25 @@ static lv_res_t _action_clock_edit(lv_obj_t *btns, const char * txt)
 		u32 new_epoch = max77620_rtc_date_to_epoch(&time);
 
 		// Stored in u32 and allow overflow for integer offset casting.
-		n_cfg.timeoff = new_epoch - epoch;
+		n_cfg.timeoffset = new_epoch - epoch;
 
 		// If canceled set 1 for invalidating first boot clock edit.
-		if (!n_cfg.timeoff)
-			n_cfg.timeoff = 1;
+		if (!n_cfg.timeoffset)
+			n_cfg.timeoffset = 1;
 		else
-			max77620_rtc_set_epoch_offset((int)n_cfg.timeoff);
+		{
+			// Adjust for DST between 28 march and 28 october.
+			// Good enough to cover all years as week info is not valid.
+			u16 md = (time.month << 8) | time.day;
+			if (n_cfg.timedst && md >= 0x31C && md < 0xA1C)
+				n_cfg.timeoffset -= 3600; // Store time in non DST.
+			max77620_rtc_set_epoch_offset((int)n_cfg.timeoffset);
+		}
 
 		nyx_changes_made = true;
 	}
 
-	mbox_action(btns, txt);
+	nyx_mbox_action(btns, txt);
 
 	return LV_RES_INV;
 }
@@ -734,18 +986,65 @@ static lv_res_t _action_clock_edit_save(lv_obj_t *btns, const char * txt)
 	return LV_RES_INV;
 }
 
+static lv_res_t _action_auto_dst_toggle(lv_obj_t *btn)
+{
+	n_cfg.timedst = !n_cfg.timedst;
+	max77620_rtc_set_auto_dst(n_cfg.timedst);
+
+	if (!n_cfg.timedst)
+		lv_btn_set_state(btn, LV_BTN_STATE_REL);
+	else
+		lv_btn_set_state(btn, LV_BTN_STATE_TGL_REL);
+
+	nyx_generic_onoff_toggle(btn);
+
+	return LV_RES_OK;
+}
+
+static const u32 month_days[12] = { 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+
+static lv_res_t _action_date_validation(lv_obj_t *roller)
+{
+	u32 year  = lv_roller_get_selected(clock_ctxt.year) + CLOCK_MIN_YEAR;
+	u32 month = lv_roller_get_selected(clock_ctxt.month) + 1;
+	u32 day   = lv_roller_get_selected(clock_ctxt.day) + 1;
+
+	// Adjust max day based on year and month.
+	u32 max_mon_day = month_days[month - 1];
+	u32 max_feb_day = !(year % 4) ? 29 : 28;
+	if (month == 2 && day > max_feb_day)
+		lv_roller_set_selected(clock_ctxt.day, max_feb_day - 1, false);
+	else if (day > max_mon_day)
+		lv_roller_set_selected(clock_ctxt.day, max_mon_day - 1, false);
+
+	return LV_RES_OK;
+}
+
 static lv_res_t _create_mbox_clock_edit(lv_obj_t *btn)
 {
+	static lv_style_t mbox_style;
+	lv_theme_t *th = lv_theme_get_current();
+	lv_style_copy(&mbox_style, th->mbox.bg);
+	mbox_style.body.padding.inner = LV_DPI / 10;
+
 	lv_obj_t *dark_bg = lv_obj_create(lv_scr_act(), NULL);
 	lv_obj_set_style(dark_bg, &mbox_darken);
 	lv_obj_set_size(dark_bg, LV_HOR_RES, LV_VER_RES);
 
 	static const char *mbox_btn_map[] = { "\251", "\222Done", "\222Cancel", "\251", "" };
 	lv_obj_t *mbox = lv_mbox_create(dark_bg, NULL);
+	lv_mbox_set_style(mbox, LV_MBOX_STYLE_BG, &mbox_style);
 	lv_mbox_set_recolor_text(mbox, true);
 	lv_obj_set_width(mbox, LV_HOR_RES / 9 * 6);
 
-	lv_mbox_set_text(mbox, "Enter #C7EA46 Date# and #C7EA46 Time# for Nyx\nThis will not alter the actual HW clock!");
+	lv_mbox_set_text(mbox, "Enter #C7EA46 Date# and #C7EA46 Time# for Nyx\n"
+						   "Used in all file operations and menu.\n"
+						   "This doesn't alter the actual HW clock!");
+
+	lv_obj_t *padding = lv_cont_create(mbox, NULL);
+	lv_cont_set_fit(padding, true, false);
+	lv_cont_set_style(padding, &lv_style_transp);
+	lv_obj_set_height(padding, LV_DPI / 10);
 
 	// Get current time.
 	rtc_time_t time;
@@ -767,6 +1066,7 @@ static lv_res_t _create_mbox_clock_edit(lv_obj_t *btn)
 	lv_roller_set_options(roller_year, CLOCK_YEARLIST);
 	lv_roller_set_selected(roller_year, time.year, false);
 	lv_roller_set_visible_row_count(roller_year, 3);
+	lv_roller_set_action(roller_year, _action_date_validation);
 	clock_ctxt.year = roller_year;
 
 	// Create month roller.
@@ -786,6 +1086,7 @@ static lv_res_t _create_mbox_clock_edit(lv_obj_t *btn)
 		"December");
 	lv_roller_set_selected(roller_month, time.month - 1, false);
 	lv_obj_align(roller_month, roller_year, LV_ALIGN_OUT_RIGHT_MID, 0, 0);
+	lv_roller_set_action(roller_month, _action_date_validation);
 	clock_ctxt.month = roller_month;
 
 	// Create day roller.
@@ -797,6 +1098,7 @@ static lv_res_t _create_mbox_clock_edit(lv_obj_t *btn)
 	lv_obj_t *roller_day = lv_roller_create(h1, roller_year);
 	lv_roller_set_options(roller_day, days);
 	lv_roller_set_selected(roller_day, time.day - 1, false);
+	lv_roller_set_action(roller_day, _action_date_validation);
 	lv_obj_align(roller_day, roller_month, LV_ALIGN_OUT_RIGHT_MID, 0, 0);
 	clock_ctxt.day = roller_day;
 
@@ -824,6 +1126,13 @@ static lv_res_t _create_mbox_clock_edit(lv_obj_t *btn)
 	lv_obj_align(roller_minute, roller_hour, LV_ALIGN_OUT_RIGHT_MID, 0, 0);
 	clock_ctxt.min = roller_minute;
 
+	// Add DST option.
+	lv_obj_t *btn_dst = lv_btn_create(mbox, NULL);
+	nyx_create_onoff_button(th, h1, btn_dst, SYMBOL_BRIGHTNESS" Auto Daylight Saving Time", _action_auto_dst_toggle, true);
+	if (n_cfg.timedst)
+		lv_btn_set_state(btn_dst, LV_BTN_STATE_TGL_REL);
+	nyx_generic_onoff_toggle(btn_dst);
+
 	// If btn is empty, save options also because it was launched from boot.
 	lv_mbox_add_btns(mbox, mbox_btn_map, btn ? _action_clock_edit : _action_clock_edit_save);
 
@@ -845,6 +1154,7 @@ static lv_res_t _joycon_info_dump_action(lv_obj_t * btn)
 	int cal_error = 0;
 	bool is_l_hos = false;
 	bool is_r_hos = false;
+	u32 joycon_found = 0;
 	bool nx_hoag = fuse_read_hw_type() == FUSE_NX_HW_TYPE_HOAG;
 	jc_gamepad_rpt_t *jc_pad = jc_get_bt_pairing_info(&is_l_hos, &is_r_hos);
 
@@ -873,7 +1183,7 @@ static lv_res_t _joycon_info_dump_action(lv_obj_t * btn)
 		goto save_data;
 
 	// Count valid joycon.
-	u32 joycon_found = jc_pad->bt_conn_l.type ? 1 : 0;
+	joycon_found = jc_pad->bt_conn_l.type ? 1 : 0;
 	if (jc_pad->bt_conn_r.type)
 		joycon_found++;
 
@@ -882,7 +1192,7 @@ static lv_res_t _joycon_info_dump_action(lv_obj_t * btn)
 	jc_pad->bt_conn_r.type = is_r_hos ? jc_pad->bt_conn_r.type : 0;
 
 save_data:
-	error = !sd_mount() ? 5 : 0;
+	error = sd_mount() ? 5 : 0;
 
 	if (!error)
 	{
@@ -899,24 +1209,19 @@ save_data:
 			error = sd_save_to_file((u8 *)data, sizeof(jc_bt_conn_t) * 2, "switchroot/joycon_mac.bin") ? 4 : 0;
 
 			// Save readable dump.
-			jc_bt_conn_t *bt = &jc_pad->bt_conn_l;
-			s_printf(data,
-				"[joycon_00]\ntype=%d\nmac=%02X:%02X:%02X:%02X:%02X:%02X\n"
-				"host=%02X:%02X:%02X:%02X:%02X:%02X\n"
-				"ltk=%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X\n\n",
-				bt->type, bt->mac[0], bt->mac[1], bt->mac[2], bt->mac[3], bt->mac[4], bt->mac[5],
-				bt->host_mac[0], bt->host_mac[1], bt->host_mac[2], bt->host_mac[3], bt->host_mac[4], bt->host_mac[5],
-				bt->ltk[0], bt->ltk[1], bt->ltk[2], bt->ltk[3], bt->ltk[4], bt->ltk[5], bt->ltk[6], bt->ltk[7],
-				bt->ltk[8], bt->ltk[9], bt->ltk[10], bt->ltk[11], bt->ltk[12], bt->ltk[13], bt->ltk[14], bt->ltk[15]);
-			bt = &jc_pad->bt_conn_r;
-			s_printf(data + strlen(data),
-				"[joycon_01]\ntype=%d\nmac=%02X:%02X:%02X:%02X:%02X:%02X\n"
-				"host=%02X:%02X:%02X:%02X:%02X:%02X\n"
-				"ltk=%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X\n",
-				bt->type, bt->mac[0], bt->mac[1], bt->mac[2], bt->mac[3], bt->mac[4], bt->mac[5],
-				bt->host_mac[0], bt->host_mac[1], bt->host_mac[2], bt->host_mac[3], bt->host_mac[4], bt->host_mac[5],
-				bt->ltk[0], bt->ltk[1], bt->ltk[2], bt->ltk[3], bt->ltk[4], bt->ltk[5], bt->ltk[6], bt->ltk[7],
-				bt->ltk[8], bt->ltk[9], bt->ltk[10], bt->ltk[11], bt->ltk[12], bt->ltk[13], bt->ltk[14], bt->ltk[15]);
+			data[0] = 0;
+			for (u32 i = 0; i < 2; i++)
+			{
+				jc_bt_conn_t *bt = !i ? &jc_pad->bt_conn_l : &jc_pad->bt_conn_r;
+				s_printf(data + strlen(data),
+					"[joycon_0%d]\ntype=%d\nmac=%02X:%02X:%02X:%02X:%02X:%02X\n"
+					"host=%02X:%02X:%02X:%02X:%02X:%02X\n"
+					"ltk=%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X\n\n",
+					i, bt->type, bt->mac[0], bt->mac[1], bt->mac[2], bt->mac[3], bt->mac[4], bt->mac[5],
+					bt->host_mac[0], bt->host_mac[1], bt->host_mac[2], bt->host_mac[3], bt->host_mac[4], bt->host_mac[5],
+					bt->ltk[0], bt->ltk[1], bt->ltk[2], bt->ltk[3], bt->ltk[4], bt->ltk[5], bt->ltk[6], bt->ltk[7],
+					bt->ltk[8], bt->ltk[9], bt->ltk[10], bt->ltk[11], bt->ltk[12], bt->ltk[13], bt->ltk[14], bt->ltk[15]);
+			}
 
 			if (!error)
 				error = f_open(&fp, "switchroot/joycon_mac.ini", FA_WRITE | FA_CREATE_ALWAYS) ? 4 : 0;
@@ -925,8 +1230,6 @@ save_data:
 				f_puts(data, &fp);
 				f_close(&fp);
 			}
-
-			f_mkdir("switchroot");
 
 			// Save IMU Calibration data.
 			if (!error && !cal_error)
@@ -970,6 +1273,7 @@ save_data:
 
 			// Save Lite Gamepad and IMU Calibration data.
 			// Actual max/min are right/left and up/down offsets.
+			// Sticks: 0x23: H1 (Hosiden), 0x25: H5 (Hosiden), 0x41: F1 (FIT), ?add missing?
 			s_printf(data,
 				"lite_cal_l_type=0x%X\n"
 				"lite_cal_lx_lof=0x%X\n"
@@ -1101,7 +1405,7 @@ disabled_or_cal0_issue:;
 
 	lv_mbox_set_text(mbox, txt_buf);
 
-	lv_mbox_add_btns(mbox, mbox_btn_map, mbox_action); // Important. After set_text.
+	lv_mbox_add_btns(mbox, mbox_btn_map, nyx_mbox_action); // Important. After set_text.
 
 	lv_obj_align(mbox, NULL, LV_ALIGN_CENTER, 0, 0);
 	lv_obj_set_top(mbox, true);
@@ -1128,7 +1432,7 @@ static lv_res_t _action_nyx_options_save(lv_obj_t *btns, const char * txt)
 {
 	int btn_idx = lv_btnm_get_pressed(btns);
 
-	mbox_action(btns, txt);
+	nyx_mbox_action(btns, txt);
 
 	if (!btn_idx)
 		_save_nyx_options_action(NULL);
@@ -1168,7 +1472,7 @@ static lv_res_t _action_win_nyx_options_close(lv_obj_t *btn)
 	lv_obj_set_opa_scale(status_bar.mid, LV_OPA_0);
 	lv_obj_set_click(status_bar.mid, false);
 
-	lv_res_t res = nyx_win_close_action_custom(btn);
+	lv_res_t res = nyx_win_close_action(btn);
 
 	_check_nyx_changes();
 
@@ -1179,7 +1483,7 @@ lv_res_t create_win_nyx_options(lv_obj_t *parrent_btn)
 {
 	lv_theme_t *th = lv_theme_get_current();
 
-	lv_obj_t *win = nyx_create_window_custom_close_btn(SYMBOL_HOME" Nyx Settings", _action_win_nyx_options_close);
+	lv_obj_t *win = nyx_create_standard_window(SYMBOL_HOME" Nyx Settings", _action_win_nyx_options_close);
 
 	static lv_style_t h_style;
 	lv_style_copy(&h_style, &lv_style_transp);
@@ -1223,7 +1527,7 @@ lv_res_t create_win_nyx_options(lv_obj_t *parrent_btn)
 
 	lv_obj_t *label_txt2 = lv_label_create(sw_h2, NULL);
 	lv_label_set_recolor(label_txt2, true);
-	lv_label_set_static_text(label_txt2, "Select a color for all #00FFC8 highlights# in Nyx.\n");
+	lv_label_set_static_text(label_txt2, "Customize #C7EA46 Theme# and #C7EA46 Accent# colors in Nyx.\n");
 	lv_obj_set_style(label_txt2, &hint_small_style);
 	lv_obj_align(label_txt2, btn, LV_ALIGN_OUT_BOTTOM_LEFT, 0, LV_DPI / 3 - 8);
 

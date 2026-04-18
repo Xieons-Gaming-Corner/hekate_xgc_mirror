@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2024 CTCaer
+ * Copyright (c) 2018-2026 CTCaer
  * Copyright (c) 2019 Atmosphère-NX
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -24,8 +24,6 @@
 #include "../config.h"
 #include <libs/fatfs/ff.h>
 #include "../storage/emummc.h"
-
-extern hekate_config h_cfg;
 
 enum emuMMC_Type
 {
@@ -138,6 +136,7 @@ typedef struct _atm_fatal_error_ctx
 #define  EXO_FLAG_CAL0_BLANKING   BIT(5)
 #define  EXO_FLAG_CAL0_WRITES_SYS BIT(6)
 #define  EXO_FLAG_ENABLE_USB3     BIT(7)
+#define  EXO_FLAG_BC_MEM_MODE     BIT(8)
 
 #define EXO_FW_VER(mj, mn) (((mj) << 24) | ((mn) << 16))
 
@@ -147,6 +146,7 @@ void config_exosphere(launch_ctxt_t *ctxt, u32 warmboot_base)
 	u32 exo_flags = 0;
 	bool usb3_force = false;
 	bool user_debug = false;
+	bool bc_mem_mode = false;
 	bool cal0_blanking = false;
 	bool cal0_allow_writes_sys = false;
 
@@ -157,8 +157,8 @@ void config_exosphere(launch_ctxt_t *ctxt, u32 warmboot_base)
 	//! TODO: Replace current HOS version decoding (as it's bound to break in the future).
 
 	// Old exosphere target versioning.
-	if (ctxt->pkg1_id->kb >= HOS_KB_VERSION_1210)                     // 12.1.0+
-		exo_fw_no = ctxt->pkg1_id->kb + 4;
+	if (ctxt->pkg1_id->mkey >= HOS_MKEY_VER_1210)                     // 12.1.0+
+		exo_fw_no = ctxt->pkg1_id->mkey + 4;
 	else if (ctxt->pkg1_id->fuses <= 3 || ctxt->pkg1_id->fuses >= 10) // 1.0.0 - 3.0.0, 8.1.0 - 12.0.3.
 		exo_fw_no = ctxt->pkg1_id->fuses;
 	else
@@ -171,7 +171,7 @@ void config_exosphere(launch_ctxt_t *ctxt, u32 warmboot_base)
 		exo_fw_no++;
 
 	// Set 12.1.0 specific revision.
-	if (ctxt->pkg1_id->kb == HOS_KB_VERSION_1210)
+	if (ctxt->pkg1_id->mkey == HOS_MKEY_VER_1210)
 		ctxt->exo_ctx.hos_revision = 1;
 
 	// Feed old exosphere target versioning to new.
@@ -199,7 +199,7 @@ void config_exosphere(launch_ctxt_t *ctxt, u32 warmboot_base)
 	case 12:
 		exo_fw_no = EXO_FW_VER(9, 1);
 		break;
-	case 13 ... 23: //!TODO: Update on API changes. 23: 20.0.0.
+	case 13 ... 25: //!TODO: Update on API changes. 25: 22.0.0.
 		exo_fw_no = EXO_FW_VER(exo_fw_no - 3, ctxt->exo_ctx.hos_revision);
 		break;
 	}
@@ -208,7 +208,7 @@ void config_exosphere(launch_ctxt_t *ctxt, u32 warmboot_base)
 	if (!ctxt->stock)
 	{
 		LIST_INIT(ini_exo_sections);
-		if (ini_parse(&ini_exo_sections, "exosphere.ini", false))
+		if (!ini_parse(&ini_exo_sections, "exosphere.ini", false))
 		{
 			LIST_FOREACH_ENTRY(ini_sec_t, ini_sec, &ini_exo_sections, link)
 			{
@@ -226,6 +226,8 @@ void config_exosphere(launch_ctxt_t *ctxt, u32 warmboot_base)
 						exo_cfg->uart_invert = atoi(kv->val);
 					else if (!strcmp("log_baud_rate", kv->key))
 						exo_cfg->uart_baudrate = atoi(kv->val);
+					else if (!strcmp("enable_mem_mode", kv->key))
+						bc_mem_mode = atoi(kv->val);
 					else if (emu_cfg.enabled && !h_cfg.emummc_force_disable)
 					{
 						if (!strcmp("blank_prodinfo_emummc", kv->key))
@@ -247,7 +249,7 @@ void config_exosphere(launch_ctxt_t *ctxt, u32 warmboot_base)
 		if (!ctxt->exo_ctx.usb3_force)
 		{
 			LIST_INIT(ini_sys_sections);
-			if (ini_parse(&ini_sys_sections, "atmosphere/config/system_settings.ini", false))
+			if (!ini_parse(&ini_sys_sections, "atmosphere/config/system_settings.ini", false))
 			{
 				LIST_FOREACH_ENTRY(ini_sec_t, ini_sec, &ini_sys_sections, link)
 				{
@@ -284,6 +286,11 @@ void config_exosphere(launch_ctxt_t *ctxt, u32 warmboot_base)
 	// Enable user access to PMU.
 	if (ctxt->exo_ctx.user_pmu)
 		exo_flags |= EXO_FLAG_USER_PMU;
+
+	// Enable Boot Config Memory Mode. Check if system_settings ini value is overridden. If not, check if enabled in ini.
+	if ((ctxt->exo_ctx.force_mem_mode && *ctxt->exo_ctx.force_mem_mode)
+			|| (!ctxt->exo_ctx.force_mem_mode && bc_mem_mode))
+		exo_flags |= EXO_FLAG_BC_MEM_MODE;
 
 	// Enable USB 3.0. Check if system_settings ini value is overridden. If not, check if enabled in ini.
 	if ((ctxt->exo_ctx.usb3_force && *ctxt->exo_ctx.usb3_force)
@@ -385,8 +392,6 @@ static const char *get_error_desc(u32 error_desc)
 	}
 }
 
-#define HOS_PID_BOOT2 0x8
-
 void secmon_exo_check_panic()
 {
 	volatile atm_fatal_error_ctx *rpt = (atm_fatal_error_ctx *)ATM_FATAL_ERR_CTX_ADDR;
@@ -398,13 +403,9 @@ void secmon_exo_check_panic()
 	gfx_clear_grey(0x1B);
 	gfx_con_setpos(0, 0);
 
-	WPRINTF("Panic occurred while running Atmosphere.\n\n");
+	WPRINTF("Atmosphere panic occurred!\n\n");
 	WPRINTFARGS("Title ID: %08X%08X", (u32)((u64)rpt->title_id >> 32), (u32)rpt->title_id);
 	WPRINTFARGS("Error:    %s (0x%x)\n", get_error_desc(rpt->error_desc), rpt->error_desc);
-
-	// Check if mixed atmosphere sysmodules.
-	if ((u32)rpt->title_id == HOS_PID_BOOT2)
-		WPRINTF("Mismatched Atmosphere files?\n");
 
 	// Save context to the SD card.
 	char filepath[0x40];
@@ -425,13 +426,11 @@ void secmon_exo_check_panic()
 	rpt->magic = 0;
 
 	gfx_printf("\n\nPress POWER to continue.\n");
+	gfx_con_setpos(0, 0);
 
-	display_backlight_brightness(100, 1000);
+	display_backlight_brightness(150, 1000);
 	msleep(1000);
 
 	while (!(btn_wait() & BTN_POWER))
 		;
-
-	display_backlight_brightness(0, 1000);
-	gfx_con_setpos(0, 0);
 }

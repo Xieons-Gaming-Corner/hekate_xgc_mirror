@@ -27,7 +27,6 @@
 #include <libs/fatfs/ff.h>
 
 extern boot_cfg_t b_cfg;
-extern hekate_config h_cfg;
 
 #pragma GCC push_options
 #pragma GCC optimize ("Os")
@@ -111,7 +110,7 @@ void menu_autorcm()
 		return;
 	}
 
-	if (!emmc_initialize(false))
+	if (emmc_initialize(false))
 	{
 		EPRINTF("Failed to init eMMC.");
 		btn_wait();

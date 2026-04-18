@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018 naehrwert
- * Copyright (c) 2018-2025 CTCaer
+ * Copyright (c) 2018-2026 CTCaer
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -27,43 +27,46 @@
 
 //!TODO: Update on mkey changes.
 enum {
-	HOS_KB_VERSION_100  = 0,
-	HOS_KB_VERSION_300  = 1,
-	HOS_KB_VERSION_301  = 2,
-	HOS_KB_VERSION_400  = 3,
-	HOS_KB_VERSION_500  = 4,
-	HOS_KB_VERSION_600  = 5,
-	HOS_KB_VERSION_620  = 6,
-	HOS_KB_VERSION_700  = 7,
-	HOS_KB_VERSION_810  = 8,
-	HOS_KB_VERSION_900  = 9,
-	HOS_KB_VERSION_910  = 10,
-	HOS_KB_VERSION_1210 = 11,
-	HOS_KB_VERSION_1300 = 12,
-	HOS_KB_VERSION_1400 = 13,
-	HOS_KB_VERSION_1500 = 14,
-	HOS_KB_VERSION_1600 = 15,
-	HOS_KB_VERSION_1700 = 16,
-	HOS_KB_VERSION_1800 = 17,
-	HOS_KB_VERSION_1900 = 18,
-	HOS_KB_VERSION_2000 = 19,
-	HOS_KB_VERSION_MAX  = HOS_KB_VERSION_2000
+	HOS_MKEY_VER_100  = 0,
+	HOS_MKEY_VER_300  = 1,
+	HOS_MKEY_VER_301  = 2,
+	HOS_MKEY_VER_400  = 3,
+	HOS_MKEY_VER_500  = 4,
+	HOS_MKEY_VER_600  = 5,
+	HOS_MKEY_VER_620  = 6,
+	HOS_MKEY_VER_700  = 7,
+	HOS_MKEY_VER_810  = 8,
+	HOS_MKEY_VER_900  = 9,
+	HOS_MKEY_VER_910  = 10,
+	HOS_MKEY_VER_1210 = 11,
+	HOS_MKEY_VER_1300 = 12,
+	HOS_MKEY_VER_1400 = 13,
+	HOS_MKEY_VER_1500 = 14,
+	HOS_MKEY_VER_1600 = 15,
+	HOS_MKEY_VER_1700 = 16,
+	HOS_MKEY_VER_1800 = 17,
+	HOS_MKEY_VER_1900 = 18,
+	HOS_MKEY_VER_2000 = 19,
+	HOS_MKEY_VER_2100 = 20,
+	HOS_MKEY_VER_2200 = 21,
+	HOS_MKEY_VER_MAX  = HOS_MKEY_VER_2200
 };
 
 #define HOS_TSEC_VERSION 4 //! TODO: Update on TSEC Root Key changes.
 
 #define HOS_PKG11_MAGIC  0x31314B50
 #define HOS_EKS_MAGIC    0x31534B45 // EKS1.
-#define HOS_EKS_TSEC_VER (HOS_KB_VERSION_700 + HOS_TSEC_VERSION)
+#define HOS_EKS_TSEC_VER (HOS_MKEY_VER_700 + HOS_TSEC_VERSION)
 
 // Use official Mariko secmon when in stock. Needs access to TZRAM.
 //#define HOS_MARIKO_STOCK_SECMON
 
 typedef struct _exo_ctxt_t
 {
-	u32  hos_revision;
-	bool no_user_exceptions;
-	bool user_pmu;
+	u32   hos_revision;
+	bool  no_user_exceptions;
+	bool  user_pmu;
+	bool *force_mem_mode;
 	bool *usb3_force;
 	bool *cal0_blank;
 	bool *cal0_allow_writes_sys;
@@ -84,7 +87,7 @@ static_assert(sizeof(hos_eks_mbr_t) == 64, "HOS EKS size is wrong!");
 
 typedef struct _launch_ctxt_t
 {
-	void *keyblob;
+	pkg1_eks_t *eks;
 
 	void *pkg1;
 	const pkg1_id_t *pkg1_id;

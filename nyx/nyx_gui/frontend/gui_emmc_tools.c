@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2020 CTCaer
+ * Copyright (c) 2018-2026 CTCaer
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -28,9 +28,6 @@
 #include "../hos/hos.h"
 #include <libs/fatfs/ff.h>
 
-extern boot_cfg_t b_cfg;
-extern hekate_config h_cfg;
-
 extern char *emmcsn_path_impl(char *path, char *sub_dir, char *filename, sdmmc_storage_t *storage);
 
 typedef struct _emmc_backup_buttons_t
@@ -55,7 +52,7 @@ static void _create_window_backup_restore(emmcPartType_t type, const char* win_l
 
 	s_printf(win_label_full, "%s%s", emmc_btn_ctxt.restore ? SYMBOL_DOWNLOAD"  Restore " : SYMBOL_UPLOAD"  Backup ", win_label+3);
 
-	lv_obj_t *win = nyx_create_standard_window(win_label_full);
+	lv_obj_t *win = nyx_create_standard_window(win_label_full, NULL);
 
 	//Disable buttons.
 	nyx_window_toggle_buttons(win, true);
@@ -102,7 +99,7 @@ static void _create_window_backup_restore(emmcPartType_t type, const char* win_l
 	lv_obj_align(label_info, label_sep, LV_ALIGN_OUT_BOTTOM_LEFT, LV_DPI / 4, LV_DPI / 10);
 	emmc_tool_gui_ctxt.label_info = label_info;
 
-	static lv_style_t bar_teal_bg, bar_teal_ind, bar_white_ind;
+	static lv_style_t bar_teal_bg, bar_teal_ind, bar_orange_bg, bar_orange_ind, bar_white_ind;
 
 	lv_style_copy(&bar_teal_bg, lv_theme_get_current()->bar.bg);
 	bar_teal_bg.body.main_color = LV_COLOR_HEX(0x005a47);
@@ -112,12 +109,23 @@ static void _create_window_backup_restore(emmcPartType_t type, const char* win_l
 	bar_teal_ind.body.main_color = LV_COLOR_HEX(0x00FFC9);
 	bar_teal_ind.body.grad_color = bar_teal_ind.body.main_color;
 
+	lv_style_copy(&bar_orange_bg, lv_theme_get_current()->bar.bg);
+	bar_orange_bg.body.main_color = LV_COLOR_HEX(0x755000);
+	bar_orange_bg.body.grad_color = bar_orange_bg.body.main_color;
+
+	lv_style_copy(&bar_orange_ind, lv_theme_get_current()->bar.indic);
+	bar_orange_ind.body.main_color = LV_COLOR_HEX(0xFFAE00);
+	bar_orange_ind.body.grad_color = bar_orange_ind.body.main_color;
+
 	lv_style_copy(&bar_white_ind, lv_theme_get_current()->bar.indic);
 	bar_white_ind.body.main_color = LV_COLOR_HEX(0xF0F0F0);
 	bar_white_ind.body.grad_color = bar_white_ind.body.main_color;
 
 	emmc_tool_gui_ctxt.bar_teal_bg = &bar_teal_bg;
 	emmc_tool_gui_ctxt.bar_teal_ind = &bar_teal_ind;
+	emmc_tool_gui_ctxt.bar_orange_bg = &bar_orange_bg;
+	emmc_tool_gui_ctxt.bar_orange_ind = &bar_orange_ind;
+	emmc_tool_gui_ctxt.bar_white_bg = lv_theme_get_current()->bar.bg;
 	emmc_tool_gui_ctxt.bar_white_ind = &bar_white_ind;
 
 	lv_obj_t *bar = lv_bar_create(h1, NULL);
@@ -275,9 +283,9 @@ lv_res_t create_window_backup_restore_tool(lv_obj_t *btn)
 		emmc_btn_ctxt.restore = true;
 
 	if (!emmc_btn_ctxt.restore)
-		win = nyx_create_standard_window(SYMBOL_SD" Backup");
+		win = nyx_create_standard_window(SYMBOL_SD" Backup", NULL);
 	else
-		win = nyx_create_standard_window(SYMBOL_SD" Restore");
+		win = nyx_create_standard_window(SYMBOL_SD" Restore", NULL);
 
 	static lv_style_t h_style;
 	lv_style_copy(&h_style, &lv_style_transp);

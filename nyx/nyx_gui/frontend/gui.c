@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2025 CTCaer
+ * Copyright (c) 2018-2026 CTCaer
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -30,8 +30,6 @@
 #include "../config.h"
 #include <libs/fatfs/ff.h>
 
-extern hekate_config h_cfg;
-extern nyx_config n_cfg;
 extern volatile boot_cfg_t *b_cfg;
 extern volatile nyx_storage_t *nyx_str;
 
@@ -54,7 +52,7 @@ lv_img_dsc_t *icon_lakka;
 
 lv_img_dsc_t *hekate_bg;
 
-lv_style_t btn_transp_rel, btn_transp_pr, btn_transp_tgl_rel, btn_transp_tgl_pr;
+lv_style_t btn_transp_rel, btn_transp_pr, btn_transp_tgl_rel, btn_transp_tgl_pr, btn_transp_ina;
 lv_style_t ddlist_transp_bg, ddlist_transp_sel;
 lv_style_t tabview_btn_pr, tabview_btn_tgl_pr;
 
@@ -106,12 +104,14 @@ static void _nyx_disp_init()
 
 	// Rotate and copy the first frame.
 	vic_compose();
+	vic_wait_idle();
 
 	// Switch to new window configuration.
 	display_init_window_a_pitch_vic();
 
 	// Enable logging on window D.
 	display_init_window_d_console();
+
 	// Switch back the backlight.
 	display_backlight_brightness(h_cfg.backlight - 20, 1000);
 }
@@ -328,19 +328,19 @@ static void _disp_fb_flush(int32_t x1, int32_t y1, int32_t x2, int32_t y2, const
 	lv_flush_ready();
 }
 
-static touch_event touchpad;
+static touch_event_t touchpad;
 static bool touch_enabled;
 static bool console_enabled = false;
 
 static bool _fts_touch_read(lv_indev_data_t *data)
 {
-	if (touch_enabled)
-		touch_poll(&touchpad);
-	else
+	if (!touch_enabled)
 		return false;
 
-	// Take a screenshot if 3 fingers.
-	if (touchpad.fingers > 2)
+	int res = touch_poll(&touchpad);
+
+	// Take a screenshot if 3rd finger.
+	if (touchpad.finger > 2)
 	{
 		_save_fb_to_bmp();
 
@@ -350,14 +350,18 @@ static bool _fts_touch_read(lv_indev_data_t *data)
 
 	if (console_enabled)
 	{
+		// If no event, keep last debug message.
+		if (res)
+			return false;
+
 		// Print input debugging in console.
 		gfx_con_getpos(&gfx_con.savedx, &gfx_con.savedy, &gfx_con.savedcol);
 		gfx_con_setpos(32, 638, GFX_COL_AUTO);
 		gfx_con.fntsz = 8;
 		gfx_printf("x: %4d, y: %4d | z: %3d | ", touchpad.x, touchpad.y, touchpad.z);
-		gfx_printf("1: %02X, 2: %02X, 3: %02X, ", touchpad.raw[1], touchpad.raw[2], touchpad.raw[3]);
-		gfx_printf("4: %02X, 5: %02X, 6: %02X, 7: %02X",
-			touchpad.raw[4], touchpad.raw[5], touchpad.raw[6], touchpad.raw[7]);
+		gfx_printf("0: %02X, 1: %02X, 2: %02X, ", touchpad.raw[0], touchpad.raw[1], touchpad.raw[2]);
+		gfx_printf("3: %02X, 4: %02X, 5: %02X, 6: %02X",
+			touchpad.raw[3], touchpad.raw[4], touchpad.raw[5], touchpad.raw[6]);
 		gfx_con_setpos(gfx_con.savedx, gfx_con.savedy, gfx_con.savedcol);
 		gfx_con.fntsz = 16;
 
@@ -369,23 +373,10 @@ static bool _fts_touch_read(lv_indev_data_t *data)
 	data->point.y = touchpad.y;
 
 	// Decide touch enable.
-	switch (touchpad.type & STMFTS_MASK_EVENT_ID)
-	{
-	case STMFTS_EV_MULTI_TOUCH_ENTER:
-	case STMFTS_EV_MULTI_TOUCH_MOTION:
+	if (touchpad.touch)
 		data->state = LV_INDEV_STATE_PR;
-		break;
-	case STMFTS_EV_MULTI_TOUCH_LEAVE:
+	else
 		data->state = LV_INDEV_STATE_REL;
-		break;
-	case STMFTS_EV_NO_EVENT:
-	default:
-		if (touchpad.touch)
-			data->state = LV_INDEV_STATE_PR;
-		else
-			data->state = LV_INDEV_STATE_REL;
-		break;
-	}
 
 	return false; // No buffering so no more data read.
 }
@@ -441,7 +432,14 @@ static bool _jc_virt_mouse_read(lv_indev_data_t *data)
 
 		if (jc_drv_ctx.calibration_step != JC_CAL_MAX_STEPS)
 		{
+			if (jc_pad->plus || jc_pad->minus)
+				goto handle_console;
+
+			if (console_enabled)
+				goto console;
+
 			data->state = LV_INDEV_STATE_REL;
+
 			return false;
 		}
 	}
@@ -461,6 +459,7 @@ static bool _jc_virt_mouse_read(lv_indev_data_t *data)
 	// Enable console.
 	if (jc_pad->plus || jc_pad->minus)
 	{
+handle_console:
 		if (((u32)get_tmr_ms() - jc_drv_ctx.console_timeout) > 1000)
 		{
 			if (!console_enabled)
@@ -482,22 +481,26 @@ static bool _jc_virt_mouse_read(lv_indev_data_t *data)
 		}
 
 		data->state = LV_INDEV_STATE_REL;
+
 		return false;
 	}
 
 	if (console_enabled)
 	{
+console:
 		// Print input debugging in console.
 		gfx_con_getpos(&gfx_con.savedx, &gfx_con.savedy, &gfx_con.savedcol);
 		gfx_con_setpos(32, 630, GFX_COL_AUTO);
 		gfx_con.fntsz = 8;
-		gfx_printf("x: %4X, y: %4X | rx: %4X, ry: %4X | b: %06X | bt: %d %d",
+		gfx_printf("x: %4X, y: %4X | rx: %4X, ry: %4X | b: %06X | c: %d (%d), %d (%d)",
 			jc_pad->lstick_x, jc_pad->lstick_y, jc_pad->rstick_x, jc_pad->rstick_y,
-			jc_pad->buttons, jc_pad->batt_info_l, jc_pad->batt_info_r);
+			jc_pad->buttons, jc_pad->batt_info_l, jc_pad->batt_chrg_l,
+			jc_pad->batt_info_r, jc_pad->batt_chrg_r);
 		gfx_con_setpos(gfx_con.savedx, gfx_con.savedy, gfx_con.savedcol);
 		gfx_con.fntsz = 16;
 
 		data->state = LV_INDEV_STATE_REL;
+
 		return false;
 	}
 
@@ -690,7 +693,7 @@ lv_img_dsc_t *bmp_to_lvimg_obj(const char *path)
 		}
 
 		lv_img_dsc_t *img_desc = (lv_img_dsc_t *)bitmap;
-		u32 offset_copy = ALIGN((u32)bitmap + sizeof(lv_img_dsc_t), 0x10);
+		uptr offset_copy = ALIGN((uptr)bitmap + sizeof(lv_img_dsc_t), 0x10);
 
 		img_desc->header.always_zero = 0;
 		img_desc->header.w = bmpData.size_x;
@@ -770,7 +773,7 @@ lv_res_t nyx_generic_onoff_toggle(lv_obj_t *btn)
 	return LV_RES_OK;
 }
 
-lv_res_t mbox_action(lv_obj_t *btns, const char *txt)
+lv_res_t nyx_mbox_action(lv_obj_t *btns, const char *txt)
 {
 	lv_obj_t *mbox = lv_mbox_get_from_btn(btns);
 	lv_obj_t *dark_bg = lv_obj_get_parent(mbox);
@@ -782,7 +785,7 @@ lv_res_t mbox_action(lv_obj_t *btns, const char *txt)
 
 bool nyx_emmc_check_battery_enough()
 {
-	if (fuse_read_hw_state() == FUSE_NX_HW_STATE_DEV)
+	if (h_cfg.devmode)
 		return true;
 
 	int batt_volt = 0;
@@ -805,7 +808,7 @@ bool nyx_emmc_check_battery_enough()
 			"#FFDD00 with selected operation!#\n\n"
 			"Charge to at least #C7EA46 3650 mV#, and try again!");
 
-		lv_mbox_add_btns(mbox, mbox_btn_map, mbox_action);
+		lv_mbox_add_btns(mbox, mbox_btn_map, nyx_mbox_action);
 		lv_obj_set_width(mbox, LV_HOR_RES / 9 * 5);
 		lv_obj_align(mbox, NULL, LV_ALIGN_CENTER, 0, 0);
 		lv_obj_set_top(mbox, true);
@@ -832,7 +835,7 @@ static void _nyx_sd_card_issues_warning(void *param)
 		"#FFDD00 This might mean detached or broken connector!#\n\n"
 		"You might want to check\n#C7EA46 Console Info# -> #C7EA46 microSD#");
 
-	lv_mbox_add_btns(mbox, mbox_btn_map, mbox_action);
+	lv_mbox_add_btns(mbox, mbox_btn_map, nyx_mbox_action);
 	lv_obj_set_width(mbox, LV_HOR_RES / 9 * 5);
 	lv_obj_align(mbox, NULL, LV_ALIGN_CENTER, 0, 0);
 	lv_obj_set_top(mbox, true);
@@ -867,14 +870,14 @@ void nyx_window_toggle_buttons(lv_obj_t *win, bool disable)
 	}
 }
 
-lv_res_t nyx_win_close_action_custom(lv_obj_t * btn)
+lv_res_t nyx_win_close_action(lv_obj_t * btn)
 {
 	close_btn = NULL;
 
 	return lv_win_close_action(btn);
 }
 
-lv_obj_t *nyx_create_standard_window(const char *win_title)
+lv_obj_t *nyx_create_standard_window(const char *win_title, lv_action_t close_action)
 {
 	static lv_style_t win_bg_style;
 
@@ -887,25 +890,10 @@ lv_obj_t *nyx_create_standard_window(const char *win_title)
 	lv_win_set_style(win, LV_WIN_STYLE_BG, &win_bg_style);
 	lv_obj_set_size(win, LV_HOR_RES, LV_VER_RES);
 
-	close_btn = lv_win_add_btn(win, NULL, SYMBOL_CLOSE" Close", nyx_win_close_action_custom);
-
-	return win;
-}
-
-lv_obj_t *nyx_create_window_custom_close_btn(const char *win_title, lv_action_t rel_action)
-{
-	static lv_style_t win_bg_style;
-
-	lv_style_copy(&win_bg_style, &lv_style_plain);
-	win_bg_style.body.main_color = lv_theme_get_current()->bg->body.main_color;
-	win_bg_style.body.grad_color = win_bg_style.body.main_color;
-
-	lv_obj_t *win = lv_win_create(lv_scr_act(), NULL);
-	lv_win_set_title(win, win_title);
-	lv_win_set_style(win, LV_WIN_STYLE_BG, &win_bg_style);
-	lv_obj_set_size(win, LV_HOR_RES, LV_VER_RES);
-
-	close_btn = lv_win_add_btn(win, NULL, SYMBOL_CLOSE" Close", rel_action);
+	if (!close_action)
+		close_btn = lv_win_add_btn(win, NULL, SYMBOL_CLOSE" Close", nyx_win_close_action);
+	else
+		close_btn = lv_win_add_btn(win, NULL, SYMBOL_CLOSE" Close", close_action);
 
 	return win;
 }
@@ -924,7 +912,7 @@ static void _launch_hos(u8 autoboot, u8 autoboot_list)
 
 	sd_end();
 
-	hw_deinit(false, 0);
+	hw_deinit(false);
 
 	(*main_ptr)();
 }
@@ -959,7 +947,7 @@ void reload_nyx(lv_obj_t *obj, bool force)
 
 	sd_end();
 
-	hw_deinit(false, 0);
+	hw_deinit(false);
 
 	(*main_ptr)();
 }
@@ -969,7 +957,7 @@ static lv_res_t reload_action(lv_obj_t *btns, const char *txt)
 	if (!lv_btnm_get_pressed(btns))
 		reload_nyx(NULL, false);
 
-	return mbox_action(btns, txt);
+	return nyx_mbox_action(btns, txt);
 }
 
 static lv_res_t _removed_sd_action(lv_obj_t *btns, const char *txt)
@@ -993,7 +981,7 @@ static lv_res_t _removed_sd_action(lv_obj_t *btns, const char *txt)
 		break;
 	}
 
-	return mbox_action(btns, txt);
+	return nyx_mbox_action(btns, txt);
 }
 
 static void _check_sd_card_removed(void *params)
@@ -1051,31 +1039,77 @@ static void _nyx_emmc_issues_warning(void *params)
 			"#FFDD00 This might mean hardware issues!#\n\n"
 			"You might want to check\n#C7EA46 Console Info# -> #C7EA46 eMMC#");
 
-		lv_mbox_add_btns(mbox, mbox_btn_map, mbox_action);
+		lv_mbox_add_btns(mbox, mbox_btn_map, nyx_mbox_action);
 		lv_obj_set_width(mbox, LV_HOR_RES / 9 * 5);
 		lv_obj_align(mbox, NULL, LV_ALIGN_CENTER, 0, 0);
 		lv_obj_set_top(mbox, true);
 	}
 }
 
+static lv_res_t _reboot_ofw_action(lv_obj_t *btns, const char *txt)
+{
+	if (!lv_btnm_get_pressed(btns))
+		power_set_state(REBOOT_BYPASS_FUSES);
+
+	return nyx_mbox_action(btns, txt);
+}
+
+static lv_res_t _create_mbox_reboot_ofw()
+{
+	lv_obj_t *dark_bg = lv_obj_create(lv_scr_act(), NULL);
+	lv_obj_set_style(dark_bg, &mbox_darken);
+	lv_obj_set_size(dark_bg, LV_HOR_RES, LV_VER_RES);
+
+	static const char * mbox_btn_map[] = { "\221OK", "\221Cancel", "" };
+	lv_obj_t *mbox = lv_mbox_create(dark_bg, NULL);
+	lv_mbox_set_recolor_text(mbox, true);
+	lv_obj_set_width(mbox, LV_HOR_RES * 2 / 3);
+
+	lv_mbox_set_text(mbox,
+		"#FF8000 Warning#\n\n"
+		"#FFDD00 Your real DRAM ID does not match your RAM!#\n"
+		"#FFDD00 Density and rank differ!#\n\n"
+		"#FFDD00 Choosing to boot that way will cause #\n"
+		"#FFDD00 performance degradation or even crashes.#\n\n"
+		"Do you really want to boot via OFW method?#");
+
+	lv_mbox_add_btns(mbox, mbox_btn_map, _reboot_ofw_action);
+
+	lv_obj_align(mbox, NULL, LV_ALIGN_CENTER, 0, 0);
+	lv_obj_set_top(mbox, true);
+
+	return LV_RES_OK;
+}
+
 static lv_res_t _reboot_action(lv_obj_t *btns, const char *txt)
 {
 	u32 btnidx = lv_btnm_get_pressed(btns);
 
+	u8 dram_id     = fuse_read_dramid(true);
+	u8 dram_id_adj = fuse_read_dramid(false);
+
+	// No OFW support if fuses burnt to 7. Custom secmon is mandatory.
+	bool t210_8gb_dramid = !h_cfg.t210b01 && dram_id     == LPDDR4_ICOSA_8GB_SAMSUNG_K4FBE3D4HM_MGXX;
+	// Warn against OFW if T210B01 and dram id has the wrong density and ranks with actual ram.
+	bool unmatched_fuses =  h_cfg.t210b01 && dram_id_adj == LPDDR4X_AULA_8GB_SAMSUNG_K4UBE3D4AA_MGCL && dram_id != dram_id_adj;
+
 	switch (btnidx)
 	{
 	case 0:
-		power_set_state(REBOOT_BYPASS_FUSES);
+		if (unmatched_fuses)
+			_create_mbox_reboot_ofw();
+		else
+			power_set_state(REBOOT_BYPASS_FUSES);
 		break;
 	case 1:
-		if (h_cfg.rcm_patched)
+		if (h_cfg.rcm_patched && !t210_8gb_dramid)
 			power_set_state(POWER_OFF_REBOOT);
 		else
 			power_set_state(REBOOT_RCM);
 		break;
 	}
 
-	return mbox_action(btns, txt);
+	return nyx_mbox_action(btns, txt);
 }
 
 static lv_res_t _poweroff_action(lv_obj_t *btns, const char *txt)
@@ -1083,7 +1117,7 @@ static lv_res_t _poweroff_action(lv_obj_t *btns, const char *txt)
 	if (!lv_btnm_get_pressed(btns))
 		power_set_state(POWER_OFF_RESET);
 
-	return mbox_action(btns, txt);
+	return nyx_mbox_action(btns, txt);
 }
 
 static lv_res_t _create_mbox_reload(lv_obj_t *btn)
@@ -1123,8 +1157,13 @@ static lv_res_t _create_mbox_reboot(lv_obj_t *btn)
 
 	lv_mbox_set_text(mbox, "#FF8000 Choose where to reboot:#");
 
-	if (h_cfg.rcm_patched)
+	// No OFW support if fuses burnt to 7. Custom secmon is mandatory.
+	bool t210_8gb_dramid = !h_cfg.t210b01 && fuse_read_dramid(true) == LPDDR4_ICOSA_8GB_SAMSUNG_K4FBE3D4HM_MGXX;
+
+	if (h_cfg.rcm_patched && !t210_8gb_dramid)
 		lv_mbox_add_btns(mbox, mbox_btn_map_patched, _reboot_action);
+	else if (t210_8gb_dramid)
+		lv_mbox_add_btns(mbox, mbox_btn_map_autorcm, _reboot_action);
 	else
 		lv_mbox_add_btns(mbox, !h_cfg.autorcm_enabled ? mbox_btn_map : mbox_btn_map_autorcm, _reboot_action);
 
@@ -1173,7 +1212,7 @@ void nyx_create_onoff_button(lv_theme_t *th, lv_obj_t *parent, lv_obj_t *btn, co
 		btn_onoff_pr_hos_style.body.opa = 35;
 	}
 	else
-		btn_onoff_pr_hos_style.body.main_color = LV_COLOR_HEX(theme_bg_color ? (theme_bg_color + 0x101010) : 0x2D2D2D);
+		btn_onoff_pr_hos_style.body.main_color = LV_COLOR_HEX(theme_bg_color ? (theme_bg_color + 0x101010) : 0x2D2D2D); // COLOR_HOS_BG_LIGHT.
 	btn_onoff_pr_hos_style.body.grad_color = btn_onoff_pr_hos_style.body.main_color;
 	btn_onoff_pr_hos_style.text.color = th->btn.pr->text.color;
 	btn_onoff_pr_hos_style.body.empty = 0;
@@ -1223,7 +1262,7 @@ static void _create_text_button(lv_theme_t *th, lv_obj_t *parent, lv_obj_t *btn,
 		btn_onoff_pr_hos_style.body.opa = 35;
 	}
 	else
-		btn_onoff_pr_hos_style.body.main_color = LV_COLOR_HEX(theme_bg_color ? (theme_bg_color + 0x101010) : 0x2D2D2D);
+		btn_onoff_pr_hos_style.body.main_color = LV_COLOR_HEX(theme_bg_color ? (theme_bg_color + 0x101010) : 0x2D2D2D); // COLOR_HOS_BG_LIGHT
 	btn_onoff_pr_hos_style.body.grad_color = btn_onoff_pr_hos_style.body.main_color;
 	btn_onoff_pr_hos_style.text.color = th->btn.pr->text.color;
 	btn_onoff_pr_hos_style.body.empty = 0;
@@ -1254,9 +1293,9 @@ static void _create_tab_about(lv_theme_t * th, lv_obj_t * parent)
 	lv_label_set_recolor(lbl_credits, true);
 	lv_label_set_static_text(lbl_credits,
 		"#C7EA46 hekate# (c) 2018,      #C7EA46 naehrwert#, #C7EA46 st4rk#\n"
-		"       (c) 2018-2025, #C7EA46 CTCaer#\n"
+		"       (c) 2018-2026, #C7EA46 CTCaer#\n"
 		"\n"
-		"#C7EA46 Nyx#    (c) 2019-2025, #C7EA46 CTCaer#\n"
+		"#C7EA46 Nyx#    (c) 2019-2026, #C7EA46 CTCaer#\n"
 		"\n"
 		"Thanks to: #00CCFF derrek, nedwill, plutoo, #\n"
 		"           #00CCFF shuffle2, smea, thexyz, yellows8 #\n"
@@ -1409,14 +1448,14 @@ static lv_res_t _create_mbox_payloads(lv_obj_t *btn)
 	lv_obj_set_size(list, LV_HOR_RES * 3 / 7, LV_VER_RES * 3 / 7);
 	lv_list_set_single_mode(list, true);
 
-	if (!sd_mount())
+	if (sd_mount())
 	{
 		lv_mbox_set_text(mbox, "#FFDD00 Failed to init SD!#");
 
 		goto out_end;
 	}
 
-	dirlist_t *filelist = dirlist("bootloader/payloads", NULL, false, false);
+	dirlist_t *filelist = dirlist("bootloader/payloads", NULL, 0);
 	sd_unmount();
 
 	u32 i = 0;
@@ -1433,7 +1472,7 @@ static lv_res_t _create_mbox_payloads(lv_obj_t *btn)
 	}
 
 out_end:
-	lv_mbox_add_btns(mbox, mbox_btn_map, mbox_action);
+	lv_mbox_add_btns(mbox, mbox_btn_map, nyx_mbox_action);
 
 	lv_obj_align(mbox, NULL, LV_ALIGN_CENTER, 0, 0);
 	lv_obj_set_top(mbox, true);
@@ -1673,7 +1712,7 @@ static lv_res_t _create_window_home_launch(lv_obj_t *btn)
 	lv_obj_t *boot_entry_label;
 	bool no_boot_entries = false;
 
-	// Create CFW buttons.
+	// Create Boot Entry buttons.
 	// Buttons are 200 x 200 with 4 pixel borders.
 	// Icons must be <= 192 x 192.
 	// Create first Button.
@@ -1713,7 +1752,7 @@ static lv_res_t _create_window_home_launch(lv_obj_t *btn)
 	// Create colorized icon style based on its parent style.
 	static lv_style_t img_style;
 	lv_style_copy(&img_style, &lv_style_plain);
-	img_style.image.color = lv_color_hsv_to_rgb(n_cfg.theme_color, 100, 100);
+	img_style.image.color = COLOR_HOS_TURQUOISE_EX(n_cfg.theme_color);
 	img_style.image.intense = LV_OPA_COVER;
 
 	// Parse ini boot entries and set buttons/icons.
@@ -1721,7 +1760,7 @@ static lv_res_t _create_window_home_launch(lv_obj_t *btn)
 	u32 curr_btn_idx = 0; // Active buttons.
 	LIST_INIT(ini_sections);
 
-	if (!sd_mount())
+	if (sd_mount())
 		goto failed_sd_mount;
 
 	// Check if we use custom system icons.
@@ -1731,15 +1770,15 @@ static lv_res_t _create_window_home_launch(lv_obj_t *btn)
 	// Choose what to parse.
 	bool ini_parse_success = false;
 	if (!more_cfg)
-		ini_parse_success = ini_parse(&ini_sections, "bootloader/hekate_ipl.ini", false);
+		ini_parse_success = !ini_parse(&ini_sections, "bootloader/hekate_ipl.ini", false);
 	else
-		ini_parse_success = ini_parse(&ini_sections, "bootloader/ini", true);
+		ini_parse_success = !ini_parse(&ini_sections, "bootloader/ini", true);
 
 	if (combined_cfg && !ini_parse_success)
 	{
 ini_parsing:
 		list_init(&ini_sections);
-		ini_parse_success = ini_parse(&ini_sections, "bootloader/ini", true);
+		ini_parse_success = !ini_parse(&ini_sections, "bootloader/ini", true);
 		more_cfg = true;
 	}
 
@@ -1868,11 +1907,20 @@ ini_parsing:
 				btn_height = 200;
 
 			lv_btn_set_style(launch_ctxt.btn[curr_btn_idx], LV_BTN_STYLE_REL, &btn_home_noborder_rel);
-			lv_btn_set_style(launch_ctxt.btn[curr_btn_idx], LV_BTN_STYLE_PR, &btn_home_noborder_rel);
+			lv_btn_set_style(launch_ctxt.btn[curr_btn_idx], LV_BTN_STYLE_PR,  &btn_home_noborder_rel);
 		}
 		lv_obj_set_size(btns, btn_width, btn_height);
 		lv_btn_set_style(btns, LV_BTN_STYLE_REL, img_noborder ? &btn_home_noborder_rel : &btn_home_transp_rel);
 		lv_btn_set_style(btns, LV_BTN_STYLE_PR, &btn_home_transp_pr);
+
+		// Button transparency if custom background, but loses color.
+		// if (!btn && hekate_bg && !img_noborder)
+		// {
+		// 	lv_btn_set_style(launch_ctxt.btn[curr_btn_idx], LV_BTN_STYLE_REL, &btn_transp_rel);
+		// 	lv_btn_set_style(launch_ctxt.btn[curr_btn_idx], LV_BTN_STYLE_PR,  &btn_transp_pr);
+		// 	lv_btn_set_style(btns, LV_BTN_STYLE_REL, &btn_home_noborder_rel);
+		// }
+
 		if (img)
 			lv_obj_align(img, NULL, LV_ALIGN_CENTER, 0, 0);
 		if (img_noborder)
@@ -1894,9 +1942,13 @@ ini_parsing:
 		lv_label_set_text(launch_ctxt.label[curr_btn_idx], ini_sec->name);
 		lv_obj_set_opa_scale(launch_ctxt.label[curr_btn_idx], LV_OPA_COVER);
 
-		// Set rolling text if name is big.
-		if (strlen(ini_sec->name) > 22)
+		// Set rolling text if name is too big.
+		int max_label_size = 238 - (n_cfg.entries_5_col ? 12 : 0);
+		if (lv_obj_get_width(launch_ctxt.label[curr_btn_idx]) > max_label_size)
+		{
 			lv_label_set_long_mode(launch_ctxt.label[curr_btn_idx], LV_LABEL_LONG_ROLL);
+			lv_obj_set_width(launch_ctxt.label[curr_btn_idx], max_label_size);
+		}
 
 		entry_idx++;
 		curr_btn_idx++;
@@ -2016,6 +2068,12 @@ static void _create_tab_home(lv_theme_t *th, lv_obj_t *parent)
 	// lv_obj_set_width(btn_quick_launch, 256);
 	// lv_obj_set_pos(btn_quick_launch, 343, 448);
 	// lv_btn_set_action(btn_quick_launch, LV_BTN_ACTION_CLICK, NULL);
+	// if (hekate_bg)
+	// {
+	// 	lv_btn_set_style(btn_quick_launch, LV_BTN_STYLE_REL, &btn_transp_rel);
+	// 	lv_btn_set_style(btn_quick_launch, LV_BTN_STYLE_PR, &btn_transp_pr);
+	// 	lv_btn_set_style(btn_quick_launch, LV_BTN_STYLE_INA, &btn_transp_ina);
+	// }
 
 	lv_obj_t *btn_nyx_options = lv_btn_create(parent, NULL);
 	_create_text_button(th, NULL, btn_nyx_options, SYMBOL_SETTINGS" Nyx Settings", NULL);
@@ -2080,10 +2138,10 @@ static lv_res_t _save_options_action(lv_obj_t *btn)
 
 	int res = 0;
 
-	if (sd_mount())
-		res = !create_config_entry();
+	if (!sd_mount())
+		res = create_config_entry();
 
-	if (res)
+	if (!res)
 		lv_mbox_set_text(mbox, "#FF8000 hekate Configuration#\n\n#96FF00 The configuration was saved to sd card!#");
 	else
 		lv_mbox_set_text(mbox, "#FF8000 hekate Configuration#\n\n#FFDD00 Failed to save the configuration#\n#FFDD00 to sd card!#");
@@ -2151,7 +2209,7 @@ static void _create_status_bar(lv_theme_t * th)
 	lv_obj_t *btn_mid = lv_btn_create(status_bar_bg, NULL);
 	lv_obj_t *lbl_mid = lv_label_create(btn_mid, NULL);
 	lv_label_set_static_text(lbl_mid, "Save Options");
-	lv_obj_set_size(btn_mid, LV_DPI * 5 / 2, LV_DPI / 2);
+	lv_obj_set_size(btn_mid, LV_DPI * 17 / 8, LV_DPI / 2);
 	lv_obj_align(btn_mid, NULL, LV_ALIGN_CENTER, 0, 0);
 	status_bar.mid = btn_mid;
 	lv_obj_set_opa_scale(btn_mid, LV_OPA_0);
@@ -2164,7 +2222,7 @@ static lv_res_t _create_mbox_save_changes_action(lv_obj_t *btns, const char * tx
 {
 	int btn_idx = lv_btnm_get_pressed(btns);
 
-	mbox_action(btns, txt);
+	nyx_mbox_action(btns, txt);
 
 	if (!btn_idx)
 		_save_options_action(NULL);
@@ -2233,9 +2291,9 @@ static void _nyx_set_default_styles(lv_theme_t * th)
 	hint_small_style_white.text.font = &interui_20;
 
 	lv_style_copy(&monospace_text, &lv_style_plain);
-	monospace_text.body.main_color = LV_COLOR_HEX(0x1B1B1B);
-	monospace_text.body.grad_color = LV_COLOR_HEX(0x1B1B1B);
-	monospace_text.body.border.color = LV_COLOR_HEX(0x1B1B1B);
+	monospace_text.body.main_color = COLOR_HOS_BG_DARKER;
+	monospace_text.body.grad_color = COLOR_HOS_BG_DARKER;
+	monospace_text.body.border.color = COLOR_HOS_BG_DARKER;
 	monospace_text.body.border.width = 0;
 	monospace_text.body.opa = LV_OPA_TRANSP;
 	monospace_text.text.color = LV_COLOR_HEX(0xD8D8D8);
@@ -2246,44 +2304,55 @@ static void _nyx_set_default_styles(lv_theme_t * th)
 	lv_style_copy(&btn_transp_rel, th->btn.rel);
 	btn_transp_rel.body.main_color = LV_COLOR_HEX(0x444444);
 	btn_transp_rel.body.grad_color = btn_transp_rel.body.main_color;
+	btn_transp_rel.body.shadow.color = LV_COLOR_HEX(0x0F0F0F);
 	btn_transp_rel.body.opa = LV_OPA_50;
 
 	lv_style_copy(&btn_transp_pr, th->btn.pr);
 	btn_transp_pr.body.main_color = LV_COLOR_HEX(0x888888);
 	btn_transp_pr.body.grad_color = btn_transp_pr.body.main_color;
+	btn_transp_pr.body.shadow.color = LV_COLOR_HEX(0x0F0F0F);
 	btn_transp_pr.body.opa = LV_OPA_50;
 
 	lv_style_copy(&btn_transp_tgl_rel, th->btn.tgl_rel);
 	btn_transp_tgl_rel.body.main_color = LV_COLOR_HEX(0x444444);
 	btn_transp_tgl_rel.body.grad_color = btn_transp_tgl_rel.body.main_color;
+	btn_transp_tgl_rel.body.shadow.color = LV_COLOR_HEX(0x0F0F0F);
 	btn_transp_tgl_rel.body.opa = LV_OPA_50;
 
 	lv_style_copy(&btn_transp_tgl_pr, th->btn.tgl_pr);
 	btn_transp_tgl_pr.body.main_color = LV_COLOR_HEX(0x888888);
 	btn_transp_tgl_pr.body.grad_color = btn_transp_tgl_pr.body.main_color;
+	btn_transp_tgl_pr.body.shadow.color = LV_COLOR_HEX(0x0F0F0F);
 	btn_transp_tgl_pr.body.opa = LV_OPA_50;
+
+	lv_style_copy(&btn_transp_ina, th->btn.ina);
+	btn_transp_ina.body.main_color = LV_COLOR_HEX(0x292929);
+	btn_transp_ina.body.grad_color = btn_transp_ina.body.main_color;
+	btn_transp_ina.body.border.color = LV_COLOR_HEX(0x444444);
+	btn_transp_ina.body.shadow.color = LV_COLOR_HEX(0x0F0F0F);
+	btn_transp_ina.body.opa = LV_OPA_50;
 
 	lv_style_copy(&ddlist_transp_bg, th->ddlist.bg);
 	ddlist_transp_bg.body.main_color = LV_COLOR_HEX(0x2D2D2D);
 	ddlist_transp_bg.body.grad_color = ddlist_transp_bg.body.main_color;
-	ddlist_transp_bg.body.opa = 180;
+	ddlist_transp_bg.body.opa = 180; // 70.6%.
 
 	lv_style_copy(&ddlist_transp_sel, th->ddlist.sel);
 	ddlist_transp_sel.body.main_color = LV_COLOR_HEX(0x4D4D4D);
 	ddlist_transp_sel.body.grad_color = ddlist_transp_sel.body.main_color;
-	ddlist_transp_sel.body.opa = 180;
+	ddlist_transp_sel.body.opa = 180; // 70.6%.
 
 	lv_style_copy(&tabview_btn_pr, th->tabview.btn.pr);
 	tabview_btn_pr.body.main_color = LV_COLOR_HEX(0xFFFFFF);
 	tabview_btn_pr.body.grad_color = tabview_btn_pr.body.main_color;
-	tabview_btn_pr.body.opa = 35;
+	tabview_btn_pr.body.opa = 35; // 13.7%.
 
 	lv_style_copy(&tabview_btn_tgl_pr, th->tabview.btn.tgl_pr);
 	tabview_btn_tgl_pr.body.main_color = LV_COLOR_HEX(0xFFFFFF);
 	tabview_btn_tgl_pr.body.grad_color = tabview_btn_tgl_pr.body.main_color;
-	tabview_btn_tgl_pr.body.opa = 35;
+	tabview_btn_tgl_pr.body.opa = 35; // 13.7%.
 
-	lv_color_t tmp_color = lv_color_hsv_to_rgb(n_cfg.theme_color, 100, 100);
+	lv_color_t tmp_color = COLOR_HOS_TURQUOISE_EX(n_cfg.theme_color);
 	text_color = malloc(32);
 	s_printf(text_color, "#%06X", (u32)(tmp_color.full & 0xFFFFFF));
 }
@@ -2341,8 +2410,9 @@ static void _nyx_main_menu(lv_theme_t * th)
 	// Add all tabs content.
 	char version[32];
 	char rel = (nyx_str->version >> 24) & 0xFF;
-	s_printf(version, "hekate %s%d.%d.%d%c",
-			 rel ? "v" : "", nyx_str->version & 0xFF, (nyx_str->version >> 8) & 0xFF, (nyx_str->version >> 16) & 0xFF, rel > 'A' ? rel : 0);
+	s_printf(version, "hekate %s%d.%d.%d%c%c",
+			 rel ? "v" : "", nyx_str->version & 0xFF, (nyx_str->version >> 8) & 0xFF, (nyx_str->version >> 16) & 0xFF, rel > 'a' ? rel : 0,
+			 (nyx_str->info_ex.rsvd_flags & RSVD_FLAG_DRAM_8GB) ? '*' : 0);
 	lv_obj_t *tab_about = lv_tabview_add_tab(tv, version);
 
 	lv_obj_t *tab_home = lv_tabview_add_tab(tv, SYMBOL_HOME" Home");
@@ -2413,7 +2483,7 @@ static void _nyx_main_menu(lv_theme_t * th)
 	else if (n_cfg.home_screen)
 		_create_window_home_launch(NULL);
 
-	if (!n_cfg.timeoff)
+	if (!n_cfg.timeoffset)
 	{
 		lv_task_t *task_run_clock = lv_task_create(first_time_clock_edit, LV_TASK_ONESHOT, LV_TASK_PRIO_MID, NULL);
 		lv_task_once(task_run_clock);
@@ -2451,7 +2521,7 @@ void nyx_load_and_run()
 	close_btn = NULL;
 
 	// Initialize touch.
-	touch_enabled = touch_power_on();
+	touch_enabled = !touch_power_on();
 	lv_indev_drv_t indev_drv_touch;
 	lv_indev_drv_init(&indev_drv_touch);
 	indev_drv_touch.type = LV_INDEV_TYPE_POINTER;
@@ -2493,7 +2563,7 @@ void nyx_load_and_run()
 	}
 	else
 	{
-		// Alternate DRAM frequencies. Saves 280 mW.
+		// Alternate DRAM frequencies. Total stall < 1ms. Saves 300+ mW.
 		while (true)
 		{
 			minerva_change_freq(FREQ_1600);  // Takes 295 us.
@@ -2501,6 +2571,7 @@ void nyx_load_and_run()
 			lv_task_handler();
 
 			minerva_change_freq(FREQ_800);   // Takes 80 us.
+			usleep(125); // Min 20us.
 		}
 	}
 }
